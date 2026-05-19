@@ -1,0 +1,25 @@
+{
+  "name": "pi-craft",
+  "version": "1.0.0",
+  "description": "Pi Craft - Automated development workflows with subagents, token tracking, and provider optimization",
+  "keywords": ["pi-package"],
+  "type": "module",
+  "pi": {
+    "extensions": ["./src/index.ts"],
+    "skills": ["./skills"],
+    "prompts": ["./prompts"],
+    "themes": ["./themes"],
+    "video": "",
+    "image": ""
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-agent-core": "*",
+    "typebox": "*"
+  },
+  "dependencies": {
+    "typebox": "^0.32.0"
+  }
+}

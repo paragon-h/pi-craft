@@ -1,0 +1,13 @@
+{
+  "name": "pi-craft",
+  "description": "Pi Craft workflow theme",
+  "colors": {
+    "craftWorkflow": "#7C3AED",
+    "craftTokens": "#6B7280",
+    "craftSubagent": "#F59E0B",
+    "craftApproval": "#10B981",
+    "craftError": "#EF4444",
+    "craftWarning": "#F59E0B"
+  },
+  "styles": {}
+}
