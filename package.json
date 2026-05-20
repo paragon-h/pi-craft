@@ -10,7 +10,19 @@
     "prompts": ["./prompts"],
     "themes": ["./themes"],
     "video": "",
-    "image": ""
+    "image": "",
+    "config": {
+      "enableSubagent": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable subagent delegation (inline in current session)"
+      },
+      "enableParallelSubagent": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable parallel/chain subagent execution via isolated processes. When disabled, only inline single-agent delegation is available."
+      }
+    }
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

@@ -261,7 +261,11 @@ export class SubagentManager {
     const args: string[] = ["--mode", "json", "-p", "--no-session"];
     // 模型优先级：agent 显式指定 > 父 agent 模型
     const effectiveModel = agent.model || this.parentModel;
-    if (effectiveModel) args.push("--model", effectiveModel);
+    const effectiveProvider = agent.model ? undefined : this.parentProvider;
+    if (effectiveModel) {
+      const modelArg = effectiveProvider ? `${effectiveProvider}/${effectiveModel}` : effectiveModel;
+      args.push("--model", modelArg);
+    }
     if (agent.tools?.length) args.push("--tools", agent.tools.join(","));
 
     const currentResult: SingleResult = {
@@ -272,7 +276,7 @@ export class SubagentManager {
       messages: [],
       stderr: "",
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-      model: effectiveModel,
+      model: effectiveProvider ? `${effectiveProvider}/${effectiveModel}` : effectiveModel,
     };
 
     const emitUpdate = () => {

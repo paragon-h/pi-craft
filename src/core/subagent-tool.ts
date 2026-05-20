@@ -87,12 +87,19 @@ function renderCollapsed(details: SubagentDetails, theme: { fg: (c: string, t: s
 
   if (mode === "single" && results.length === 1) {
     const r = results[0];
+    const isInline = r.messages.length === 0 && r.exitCode === 0;
     const ok = r.exitCode === 0;
     const icon = ok ? theme.fg("success", "✓") : theme.fg("error", "✗");
     const output = getOutput(r).slice(0, 200);
     let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))} ${theme.fg("muted", `(${r.agentSource})`)}`;
-    if (output) text += `\n${theme.fg("toolOutput", output)}`;
-    text += `\n${theme.fg("dim", fmtUsage(r))}`;
+    if (isInline) {
+      text += ` ${theme.fg("dim", "[inline]")}`;
+      text += `\n${theme.fg("toolOutput", r.task.slice(0, 200))}`;
+    } else if (output) {
+      text += `\n${theme.fg("toolOutput", output)}`;
+    }
+    const usageStr = fmtUsage(r);
+    if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
     text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
     return text;
   }
@@ -139,37 +146,43 @@ function renderExpanded(details: SubagentDetails, theme: { fg: (c: string, t: st
   container.addChild(new Spacer(1));
 
   for (const r of results) {
+    const isInline = r.messages.length === 0 && r.exitCode === 0;
     const ok = r.exitCode === 0;
     const icon = r.exitCode === -1 ? "⏳" : ok ? "✓" : "✗";
     const color = r.exitCode === -1 ? "warning" : ok ? "success" : "error";
 
-    container.addChild(new Text(`${theme.fg(color, icon)} ${theme.fg("accent", r.agent)} ${theme.fg("muted", `(${r.agentSource})`)}`, 0, 0));
+    container.addChild(new Text(`${theme.fg(color, icon)} ${theme.fg("accent", r.agent)} ${theme.fg("muted", `(${r.agentSource})${isInline ? " [inline delegation]" : ""}`)}`, 0, 0));
     container.addChild(new Text(theme.fg("dim", `Task: ${r.task.slice(0, 200)}`), 0, 0));
     container.addChild(new Spacer(1));
 
-    // Tool calls
-    const items = getDisplayItems(r);
-    if (items.length > 0) {
-      container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
-      for (const item of items.slice(-20)) {
-        if (item.type === "toolCall") {
-          container.addChild(new Text(theme.fg("muted", "→ ") + fmtToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
+    // Tool calls (only for process-spawned results)
+    if (!isInline) {
+      const items = getDisplayItems(r);
+      if (items.length > 0) {
+        container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
+        for (const item of items.slice(-20)) {
+          if (item.type === "toolCall") {
+            container.addChild(new Text(theme.fg("muted", "→ ") + fmtToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
+          }
         }
+        container.addChild(new Spacer(1));
       }
-      container.addChild(new Spacer(1));
-    }
 
-    // Output
-    const output = getOutput(r);
-    if (output) {
-      container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
-      container.addChild(new Markdown(output.trim().slice(0, 3000), 0, 0, mdTheme));
-      container.addChild(new Spacer(1));
+      // Output
+      const output = getOutput(r);
+      if (output) {
+        container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
+        container.addChild(new Markdown(output.trim().slice(0, 3000), 0, 0, mdTheme));
+        container.addChild(new Spacer(1));
+      }
     }
 
     // Stats
-    container.addChild(new Text(theme.fg("dim", fmtUsage(r)), 0, 0));
-    container.addChild(new Spacer(1));
+    const usageStr = fmtUsage(r);
+    if (usageStr) {
+      container.addChild(new Text(theme.fg("dim", usageStr), 0, 0));
+      container.addChild(new Spacer(1));
+    }
   }
 
   return container;
@@ -219,17 +232,38 @@ export function registerSubagentTool(
   pi: ExtensionAPI,
   subagent: SubagentManager,
   statusline: StatuslineManager,
+  enabled = true,
+  parallelEnabled = false,
 ) {
   pi.registerTool({
     name: "subagent",
     label: "Subagent",
     description: [
-      "Delegate tasks to specialized subagents with isolated context.",
-      "Modes: single (agent + task), parallel (tasks array for concurrent execution), chain (sequential with {previous} placeholder).",
+      "Delegate tasks to specialized subagents.",
+      "Single mode (always available): injects agent system prompt inline — main agent executes directly.",
+      parallelEnabled
+        ? "Parallel/chain mode: spawns isolated pi processes for concurrent execution."
+        : "Parallel/chain mode is disabled (enable with enableParallelSubagent config).",
     ].join(" "),
     parameters: SubagentParams,
 
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      // ─── 总开关检查 ──────────────────────────────────
+      if (!enabled) {
+        return {
+          content: [{ type: "text", text: "⚠️ Subagent system is disabled. Enable it by setting `enableSubagent: true` in your pi-craft config." }],
+          details: { mode: "single", results: [] } as SubagentDetails,
+        };
+      }
+
+      const agentNames = subagent.getAgentNames();
+      if (agentNames.length === 0) {
+        return {
+          content: [{ type: "text", text: "No subagent definitions found. Add agent .md files to .pi/craft/agents/ or ~/.pi/agent/agents/." }],
+          details: { mode: "single", results: [] } as SubagentDetails,
+        };
+      }
+
       const hasChain = (params.chain?.length ?? 0) > 0;
       const hasTasks = (params.tasks?.length ?? 0) > 0;
       const hasSingle = Boolean(params.agent && params.task);
@@ -237,77 +271,126 @@ export function registerSubagentTool(
 
       if (modeCount !== 1) {
         return {
-          content: [{ type: "text", text: `Provide exactly one mode. Available agents: ${subagent.getAgentNames().join(", ")}` }],
+          content: [{ type: "text", text: `Provide exactly one mode. Available agents: ${agentNames.join(", ")}` }],
           details: { mode: "single", results: [] } as SubagentDetails,
         };
       }
 
-      // Parallel
-      if (params.tasks?.length) {
-        statusline.updateSubagent(`parallel(${params.tasks.length})`, "running");
-        const results = await subagent.runParallel(ctx.cwd, params.tasks, signal, (partial) => {
-          onUpdate?.({
-            content: partial.content,
-            details: partial.details,
-          });
-        });
-        const ok = results.filter((r) => r.exitCode === 0).length;
-        statusline.updateSubagent(null);
-
-        // 返回每个 subagent 的完整输出给主 agent
-        const outputs = results.map((r) => {
-          const output = getOutput(r);
-          const ok = r.exitCode === 0;
-          return `### ${ok ? "✓" : "✗"} ${r.agent}\n> ${r.task.slice(0, 100)}\n\n${output || "(no output)"}\n`;
-        });
-        return {
-          content: [{ type: "text", text: `Parallel execution: ${ok}/${results.length} succeeded\n\n${outputs.join("\n---\n\n")}` }],
-          details: { mode: "parallel", results },
-        };
-      }
-
-      // Chain
-      if (params.chain?.length) {
-        let previous = "";
-        const chainResults: SingleResult[] = [];
-        for (const step of params.chain) {
-          statusline.updateSubagent(step.agent, "running");
-          const taskText = step.task.replace(/\{previous\}/g, previous);
-          const r = await subagent.runSingle(ctx.cwd, step.agent, taskText, signal, (partial) => {
-            onUpdate?.({ content: partial.content, details: { mode: "chain", results: [...chainResults, partial.details?.results?.[0] ?? r].filter(Boolean) } });
-          });
-          chainResults.push(r);
-          previous = getOutput(r);
-          if (r.exitCode !== 0) break;
+      // ─── Parallel / Chain — 需显式开启 ────────────────
+      if (hasTasks || hasChain) {
+        if (!parallelEnabled) {
+          const singleHint = agentNames.length > 0
+            ? `\nUse single agent mode instead:\n  subagent({ agent: "${agentNames[0]}", task: "..." })`
+            : "";
+          return {
+            content: [{
+              type: "text",
+              text: `⚠️ Parallel/chain subagent execution is disabled. Enable it with \`enableParallelSubagent: true\` config.${singleHint}`,
+            }],
+            details: { mode: "single", results: [] } as SubagentDetails,
+          };
         }
-        statusline.updateSubagent(null);
 
-        const outputs = chainResults.map((r, i) => {
-          const output = getOutput(r);
-          const ok = r.exitCode === 0;
-          return `### Step ${i + 1}: ${ok ? "✓" : "✗"} ${r.agent}\n> ${r.task.slice(0, 100)}\n\n${output || "(no output)"}\n`;
-        });
-        return {
-          content: [{ type: "text", text: `Chain execution:\n\n${outputs.join("\n---\n\n")}` }],
-          details: { mode: "chain", results: chainResults },
-        };
+        // Parallel
+        if (params.tasks?.length) {
+          statusline.updateSubagent(`parallel(${params.tasks.length})`, "running");
+          const results = await subagent.runParallel(ctx.cwd, params.tasks, signal, (partial) => {
+            onUpdate?.({
+              content: partial.content,
+              details: partial.details,
+            });
+          });
+          const ok = results.filter((r) => r.exitCode === 0).length;
+          statusline.updateSubagent(null);
+
+          const outputs = results.map((r) => {
+            const output = getOutput(r);
+            const ok = r.exitCode === 0;
+            return `### ${ok ? "✓" : "✗"} ${r.agent}\n> ${r.task.slice(0, 100)}\n\n${output || "(no output)"}\n`;
+          });
+          return {
+            content: [{ type: "text", text: `Parallel execution: ${ok}/${results.length} succeeded\n\n${outputs.join("\n---\n\n")}` }],
+            details: { mode: "parallel", results },
+          };
+        }
+
+        // Chain
+        if (params.chain?.length) {
+          let previous = "";
+          const chainResults: SingleResult[] = [];
+          for (const step of params.chain) {
+            statusline.updateSubagent(step.agent, "running");
+            const taskText = step.task.replace(/\{previous\}/g, previous);
+            const r = await subagent.runSingle(ctx.cwd, step.agent, taskText, signal, (partial) => {
+              onUpdate?.({ content: partial.content, details: { mode: "chain", results: [...chainResults, partial.details?.results?.[0] ?? r].filter(Boolean) } });
+            });
+            chainResults.push(r);
+            previous = getOutput(r);
+            if (r.exitCode !== 0) break;
+          }
+          statusline.updateSubagent(null);
+
+          const outputs = chainResults.map((r, i) => {
+            const output = getOutput(r);
+            const ok = r.exitCode === 0;
+            return `### Step ${i + 1}: ${ok ? "✓" : "✗"} ${r.agent}\n> ${r.task.slice(0, 100)}\n\n${output || "(no output)"}\n`;
+          });
+          return {
+            content: [{ type: "text", text: `Chain execution:\n\n${outputs.join("\n---\n\n")}` }],
+            details: { mode: "chain", results: chainResults },
+          };
+        }
       }
 
-      // Single
+      // ─── Single — inline delegation（当前 session 直接执行）───
       if (params.agent && params.task) {
+        const agent = subagent.getAgent(params.agent);
+        if (!agent) {
+          return {
+            content: [{ type: "text", text: `Unknown agent: "${params.agent}". Available: ${agentNames.join(", ")}` }],
+            details: { mode: "single", results: [] },
+          };
+        }
+
         statusline.updateSubagent(params.agent, "running");
-        const r = await subagent.runSingle(ctx.cwd, params.agent, params.task, signal, (partial) => {
-          onUpdate?.(partial);
-        });
-        statusline.updateSubagent(params.agent, r.exitCode === 0 ? "done" : "error");
+
+        // Inline delegation: directly inject agent system prompt + task into the current session.
+        // The main agent internalizes the delegated identity and does the work directly.
+        const inlinePrompt = [
+          `## 🏗 Subagent Delegation: **${agent.name}** (${agent.source})`,
+          ``,
+          `You are now acting as the **${agent.name}** subagent. Internalize the system prompt below and execute the task directly — do NOT call subagent again for this.`,
+          ``,
+          `### Agent System Prompt:`,
+          agent.systemPrompt,
+          ``,
+          `### Task:`,
+          params.task,
+          ``,
+          `---`,
+          `Complete this task now using your available tools. When finished, state the result clearly.`,
+        ].join("\n");
+
+        const inlineResult: SingleResult = {
+          agent: params.agent,
+          agentSource: agent.source,
+          task: params.task,
+          exitCode: 0,
+          messages: [],
+          stderr: "",
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+        };
+
+        statusline.updateSubagent(params.agent, "done");
+
         return {
-          content: [{ type: "text", text: getOutput(r) || "(no output)" }],
-          details: { mode: "single", results: [r] },
+          content: [{ type: "text", text: inlinePrompt }],
+          details: { mode: "single", results: [inlineResult] },
         };
       }
 
       return {
-        content: [{ type: "text", text: `Invalid parameters. Available agents: ${subagent.getAgentNames().join(", ")}` }],
+        content: [{ type: "text", text: `Invalid parameters. Available agents: ${agentNames.join(", ")}` }],
         details: { mode: "single", results: [] },
       };
     },

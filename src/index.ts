@@ -83,22 +83,33 @@ export default async function (pi: ExtensionAPI) {
   const subagent = new SubagentManager();
   const statusline = new StatuslineManager();
 
-  // 加载内置 subagent 定义
+  // 加载内置 subagent 定义（仅在开关开启时）
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const builtinAgentsDir = path.join(__dirname, "workflows", "coding", "agents");
-  if (fs.existsSync(builtinAgentsDir)) {
-    subagent.loadBuiltinAgents(builtinAgentsDir);
+
+  // 读取 subagent 开关配置
+  const craftConfig = (pi as Record<string, unknown>).craftConfig as
+    | { enableSubagent?: boolean; enableParallelSubagent?: boolean; enabledScenarios?: string[]; disabledScenarios?: string[] }
+    | undefined;
+  const subagentEnabled = craftConfig?.enableSubagent !== false; // 默认开启
+  const parallelEnabled = craftConfig?.enableParallelSubagent === true; // 默认关闭
+
+  if (subagentEnabled) {
+    if (fs.existsSync(builtinAgentsDir)) {
+      subagent.loadBuiltinAgents(builtinAgentsDir);
+    }
+    // 也加载 Pi 原生 agents 目录
+    const homeAgentDir = path.join(
+      process.env.HOME ?? process.env.USERPROFILE ?? "/tmp",
+      ".pi", "agent", "agents",
+    );
+    subagent.loadPiAgents(homeAgentDir);
   }
 
-  // 也加载 Pi 原生 agents 目录
-  const homeAgentDir = path.join(
-    process.env.HOME ?? process.env.USERPROFILE ?? "/tmp",
-    ".pi", "agent", "agents",
-  );
-  subagent.loadPiAgents(homeAgentDir);
-
-  // 注册 subagent 工具（带详细 TUI 渲染）
-  registerSubagentTool(pi, subagent, statusline);
+  // 注册 subagent 工具
+  // - subagentEnabled=false: 工具返回禁用提示
+  // - parallelEnabled=false: 仅 inline 单代理模式可用
+  registerSubagentTool(pi, subagent, statusline, subagentEnabled, parallelEnabled);
 
   let engine: WorkflowEngine | null = null;
   const managers: Managers = { engine: null, tracker, subagent, statusline };

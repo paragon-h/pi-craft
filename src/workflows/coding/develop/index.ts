@@ -123,12 +123,11 @@ export function register(dc: DevelopContext): void {
         );
 
         // 自动触发下一轮
+        // 延迟到 agent_end handler 返回后、agent 完全 idle 再发送，
+        // 避免 "Agent is already processing" 错误和与用户手动输入的竞争
         const trigger = AUTO_TRIGGER[next];
         if (trigger) {
-          pi.sendMessage(
-            { customType: "craft-auto-trigger", content: trigger, display: false },
-            { triggerTurn: true },
-          );
+          setTimeout(() => pi.sendUserMessage(trigger), 0);
         }
       } else {
         engine.transition("completed");
