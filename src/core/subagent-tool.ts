@@ -253,8 +253,15 @@ export function registerSubagentTool(
         });
         const ok = results.filter((r) => r.exitCode === 0).length;
         statusline.updateSubagent(null);
+
+        // 返回每个 subagent 的完整输出给主 agent
+        const outputs = results.map((r) => {
+          const output = getOutput(r);
+          const ok = r.exitCode === 0;
+          return `### ${ok ? "✓" : "✗"} ${r.agent}\n> ${r.task.slice(0, 100)}\n\n${output || "(no output)"}\n`;
+        });
         return {
-          content: [{ type: "text", text: `Parallel: ${ok}/${results.length} tasks succeeded` }],
+          content: [{ type: "text", text: `Parallel execution: ${ok}/${results.length} succeeded\n\n${outputs.join("\n---\n\n")}` }],
           details: { mode: "parallel", results },
         };
       }
@@ -274,8 +281,14 @@ export function registerSubagentTool(
           if (r.exitCode !== 0) break;
         }
         statusline.updateSubagent(null);
+
+        const outputs = chainResults.map((r, i) => {
+          const output = getOutput(r);
+          const ok = r.exitCode === 0;
+          return `### Step ${i + 1}: ${ok ? "✓" : "✗"} ${r.agent}\n> ${r.task.slice(0, 100)}\n\n${output || "(no output)"}\n`;
+        });
         return {
-          content: [{ type: "text", text: getOutput(chainResults[chainResults.length - 1]) || "(no output)" }],
+          content: [{ type: "text", text: `Chain execution:\n\n${outputs.join("\n---\n\n")}` }],
           details: { mode: "chain", results: chainResults },
         };
       }

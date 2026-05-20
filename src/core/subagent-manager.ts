@@ -411,6 +411,7 @@ export class SubagentManager {
       };
     }
 
+    let completedCount = 0;
     const results = await mapWithConcurrencyLimit(tasks, MAX_CONCURRENCY, async (t, index) => {
       const result = await this.runSingle(cwd, t.agent, t.task, signal, (partial) => {
         if (partial.details?.results[0]) {
@@ -424,9 +425,10 @@ export class SubagentManager {
         }
       });
       allResults[index] = result;
+      completedCount++;
       if (onUpdate) {
         onUpdate({
-          content: [{ type: "text", text: `Parallel: ${results.length}/${tasks.length} done` }],
+          content: [{ type: "text", text: `Parallel: ${completedCount}/${tasks.length} done` }],
           details: { mode: "parallel", results: [...allResults] },
         });
       }
