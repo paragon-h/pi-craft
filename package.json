@@ -8,7 +8,6 @@
     "extensions": ["./src/index.ts"],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
-    "themes": ["./themes"],
     "video": "",
     "image": "",
     "config": {
