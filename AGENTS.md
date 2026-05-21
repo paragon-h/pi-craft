@@ -3,7 +3,21 @@
 Pi Coding Agent extension — automated development workflows with subagents, token tracking, and provider optimization.
 
 ## Overview
-pi-craft is a mono-repo extension for Pi that provides multi-stage development workflows (code analysis → requirement clarification → design → testing → implementation → completion). It includes a subagent system with scout/architect/implementer/reviewer roles, token consumption tracking with cache hit rate monitoring, and security guards (cwd write protection + dangerous command confirmations).
+pi-craft is a multi-extension package for Pi that provides a modular plugin architecture. The **Core** extension supplies shared infrastructure (token tracking, subagent system, statusline, security guards), and **Scenario** extensions plug in independently for different workflows.
+
+### Scenario Plugin Architecture
+Users can selectively enable scenarios via `settings.json` package filtering:
+
+```jsonc
+// Work computer: Core + Coding only
+{ "packages": [{ "source": "pi-craft", "extensions": ["./src/index.ts", "./src/scenarios/coding/index.ts"] }] }
+
+// Life computer: Core + Travel + Stock
+{ "packages": [{ "source": "pi-craft", "extensions": ["./src/index.ts", "./src/scenarios/travel/index.ts", "./src/scenarios/stock/index.ts"] }] }
+
+// Default: all extensions load (same as today)
+{ "packages": ["pi-craft"] }
+```
 
 ## Tech Stack
 - TypeScript, ES modules (`"type": "module"`)
@@ -11,34 +25,78 @@ pi-craft is a mono-repo extension for Pi that provides multi-stage development w
 - Runtime deps: `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `typebox`
 - Node.js built-ins via `node:` prefix
 
-## Key Files
-- `src/index.ts` — Extension entry point: registers commands, events, initializes managers
-- `src/core/workflow-engine.ts` — State machine for multi-stage workflows with persistence
-- `src/core/token-tracker.ts` — Token usage tracking with model/provider/session stats
-- `src/core/subagent-manager.ts` — Subagent discovery, spawn, and execution
-- `src/core/subagent-tool.ts` — Subagent tool registration + TUI rendering
-- `src/core/cwd-guard.ts` — Write operation boundary enforcement
-- `src/ui/statusline.ts` — Enhanced status bar (workflow stage, tokens, parallel mode, guard)
-- `src/ui/token-dashboard.ts` — Full-screen token dashboard overlay (/tokens)
-- `src/workflows/coding/` — Coding scenario with develop + review sub-scenarios
-- `src/workflows/coding/develop/stages/` — Per-stage config (prompt, tools, rules)
-- `src/workflows/coding/agents/` — Subagent definitions (.md with YAML frontmatter)
-
 ## Architecture
+
 ```
-src/core/     → Pure logic, no UI dependency
-src/ui/       → TUI rendering (uses @earendil-works/pi-tui)
-src/workflows/ → Workflow scenarios and stage configurations
+src/
+├── index.ts                              # 🔧 Core Extension (always loaded)
+│                                         #   TokenTracker, SubagentManager, StatuslineManager
+│                                         #   /tokens dashboard, cwd guard, safety interlocks
+├── core/
+│   ├── registry.ts                       # 🆕 Cross-extension shared state singleton
+│   ├── workflow-engine.ts                # Generic state machine with persistence
+│   ├── token-tracker.ts                  # Token usage + cache hit rate stats
+│   ├── subagent-manager.ts               # Subagent discovery, spawn, execution
+│   ├── subagent-tool.ts                  # Subagent tool registration + TUI
+│   └── cwd-guard.ts                      # Write operation boundary enforcement
+├── ui/
+│   ├── statusline.ts                     # Enhanced status bar
+│   ├── token-dashboard.ts                # /tokens full-screen overlay
+│   └── components/
+│       └── workflow-progress.ts          # Stage progress bar widget
+└── scenarios/
+    ├── coding/
+    │   ├── index.ts                      # 🔌 Coding Scenario Extension
+    │   │                                  #   /craft:coding, /craft coding|review|status...
+    │   │                                  #   Stage prompt injection, [STAGE_COMPLETE] detection
+    │   ├── develop/index.ts + stages/     # Develop sub-scenario state machine
+    │   ├── review/index.ts + stages/      # Review sub-scenario state machine
+    │   ├── agents/                        # Built-in subagents (.md with YAML frontmatter)
+    │   └── prompts/                       # Prompt templates
+    ├── travel/index.ts                    # 🔌 Travel Scenario (placeholder)
+    ├── stock/index.ts                     # 🔌 Stock Scenario (placeholder)
+    └── knowledge/index.ts                 # 🔌 Knowledge Scenario (placeholder)
 ```
 
-Events drive the workflow: `before_agent_start` injects stage-specific system prompts, `agent_end` detects `[STAGE_COMPLETE]` to transition stages, `tool_call` enforces read-only rules and cwd guard.
+### Extension Responsibilities
+
+#### Core Extension (`src/index.ts`)
+| Feature | Description |
+|---------|-------------|
+| Token tracking | `message_end` → TokenTracker → persistence |
+| `/tokens` command | Full-screen dashboard + print mode |
+| `ctrl+shift+t` | Quick token summary |
+| Subagent tool | Single/parallel/chain with TUI rendering |
+| CWD guard | Blocks writes outside project directory |
+| Safety interlocks | Dangerous commands (sudo/kill/docker), sensitive file writes |
+| Statusline base | Tokens, parallel mode, guard indicator |
+| Workflow restore | Recovers engine state to registry (scenarios re-register handlers) |
+
+#### Coding Scenario Extension (`src/scenarios/coding/index.ts`)
+| Feature | Description |
+|---------|-------------|
+| `/craft:coding` | Interactive requirement input with auto slug generation |
+| `/craft coding <req> [slug]` | One-shot workflow start |
+| `/craft review [target]` | Code review workflow |
+| `/craft status\|resume\|rollback\|abort` | Workflow management |
+| Stage prompts | `before_agent_start` injects stage-specific system prompts |
+| Stage transitions | `agent_end` detects `[STAGE_COMPLETE]` |
+| Read-only enforcement | Blocks write/edit in analysis/design phases |
+| Built-in agents | Loads scout, architect, implementer, reviewer |
+| Progress widget | `ctx.ui.setWidget("craft-progress", ...)` |
+
+### Shared State (`src/core/registry.ts`)
+Core initializes managers and calls `initState()`. Scenarios read via `getState()`. Since all extensions share the same package module root, imports resolve to the same singleton instance.
 
 ## Commands
-- `/craft:coding` — Enter coding workflow mode (type requirement, slug auto-generated)
-- `/craft coding <req> [slug]` — Legacy one-shot command
-- `/craft review` — Code review workflow
-- `/craft status | resume | rollback | abort | scenarios` — Workflow management
-- `/tokens` — Token dashboard
+- `/tokens` — Token usage dashboard (Core)
+- `/craft:coding` — Enter coding workflow mode (Coding scenario)
+- `/craft coding <req> [slug]` — Start coding workflow
+- `/craft review [target]` — Code review workflow
+- `/craft status | resume | rollback | abort` — Workflow management
+- `/travel` — Travel scenario (placeholder)
+- `/stock` — Stock analysis scenario (placeholder)
+- `/knowledge` — Knowledge management scenario (placeholder)
 
 ## Config
 In `settings.json` under `craft`:

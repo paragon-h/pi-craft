@@ -11,7 +11,7 @@
  * 子代理定义位置：
  * - 用户级: ~/.pi/agent/agents/*.md（Pi 原生加载）
  * - 项目级: .pi/craft/agents/*.md（本扩展专属）
- * - 内置: src/workflows/coding/agents/*.md
+ * - 内置: src/scenarios/coding/agents/*.md
  */
 
 import { spawn } from "node:child_process";
@@ -147,7 +147,7 @@ export class SubagentManager {
   // ─── 代理发现 ──────────────────────────────────────────
 
   /**
-   * 加载内置代理（从 src/workflows/coding/agents/）
+   * 加载内置代理（从 src/scenarios/coding/agents/）
    */
   loadBuiltinAgents(agentsDir: string): void {
     if (!fs.existsSync(agentsDir)) return;

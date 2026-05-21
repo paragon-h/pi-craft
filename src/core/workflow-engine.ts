@@ -16,7 +16,8 @@ import * as path from "node:path";
 
 // ─── 类型定义 ────────────────────────────────────────────────
 
-export type WorkflowType = "coding" | "stock" | "travel" | "knowledge";
+/** Open-ended — scenarios define their own types */
+export type WorkflowType = string;
 
 export type WorkflowStage =
   | "idle"
