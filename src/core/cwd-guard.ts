@@ -8,6 +8,7 @@
  */
 
 import * as path from "node:path";
+import * as os from "node:os";
 
 /**
  * 检查操作是否在工作目录内。
@@ -19,10 +20,19 @@ export function checkCwdGuard(
   cwd: string,
 ): string | null {
   const resolvedCwd = path.resolve(cwd);
+  const homeDir = os.homedir();
+
+  /** 展开 ~ 并解析为绝对路径 */
+  function resolvePath(p: string): string {
+    if (p.startsWith("~")) {
+      return path.resolve(p.replace("~", homeDir));
+    }
+    return path.resolve(p);
+  }
 
   function isInsideCwd(targetPath: string): boolean {
     if (!targetPath) return false;
-    const resolved = path.resolve(targetPath);
+    const resolved = resolvePath(targetPath);
     return resolved.startsWith(resolvedCwd + path.sep) || resolved === resolvedCwd;
   }
 
@@ -48,7 +58,20 @@ export function checkCwdGuard(
   if (toolName === "bash") {
     const command = (input.command as string) || "";
 
-    // 检测 > / >> / tee 写入外部路径
+    // 提取命令中所有绝对路径（/xxx 或 ~/xxx）
+    const pathPattern = /(?:\s|^)([~\/]\S+)/g;
+    let match: RegExpExecArray | null;
+    const paths: string[] = [];
+    while ((match = pathPattern.exec(command)) !== null) {
+      paths.push(match[1]);
+    }
+
+    // 检查每个路径是否在工作目录外
+    // 只报警写入类命令的参数（mkdir/touch/rm/cp/mv 等），读命令（ls/cat/grep）忽略
+    const writeCommands = /\b(mkdir|touch|rm\s|rmdir|cp\s|mv\s|ln\s|chmod|chown|npm\s+init|git\s+init|git\s+clone|go\s+mod\s+init)\b/;
+    const isWriteCmd = writeCommands.test(command);
+
+    // 检测 > / >> / tee 写入外部路径（始终检查）
     const redirectMatch = command.match(/(?:>|>>|tee\s+)(?:-a\s+)?(\S+)/g);
     if (redirectMatch) {
       for (const m of redirectMatch) {
@@ -65,6 +88,15 @@ export function checkCwdGuard(
       const target = ddMatch[1];
       if (target && !target.startsWith("/dev/") && !isInsideCwd(target)) {
         return `dd 写操作目标在工作目录外:\n命令: ${command.slice(0, 80)}\n工作目录: ${cwd}`;
+      }
+    }
+
+    // 写入类命令的参数路径检查
+    if (isWriteCmd && paths.length > 0) {
+      for (const p of paths) {
+        if (!isInsideCwd(p)) {
+          return `bash 命令目标在工作目录外:\n命令: ${command.slice(0, 80)}\n工作目录: ${cwd}`;
+        }
       }
     }
   }
