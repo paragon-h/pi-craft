@@ -81,12 +81,17 @@ export class StatuslineManager {
   updateTokens(tracker: TokenTracker): void {
     if (!this.ctx?.hasUI) return;
     const t = this.theme();
-    const stats = tracker.getStats();
+    const all = tracker.getTotalAllIn();
+    const cache = tracker.getCacheHitRate();
 
     const parts: string[] = [];
-    if (stats.total.input > 0) parts.push(`↑${formatTokens(stats.total.input)}`);
-    if (stats.total.output > 0) parts.push(`↓${formatTokens(stats.total.output)}`);
-    if (stats.total.cost > 0) parts.push(formatCost(stats.total.cost));
+    if (all.input > 0) parts.push(`↑${formatTokens(all.input)}`);
+    if (all.output > 0) parts.push(`↓${formatTokens(all.output)}`);
+    // 缓存命中率（如果有缓存数据）
+    if (cache.cacheRead > 0 && all.input > 1000) {
+      parts.push(t.fg("success", `⊕${Math.round(cache.rate * 100)}%`));
+    }
+    if (all.cost > 0) parts.push(formatCost(all.cost));
 
     if (parts.length === 0) {
       this.ctx.ui.setStatus(STATUS_KEYS.tokens, undefined);

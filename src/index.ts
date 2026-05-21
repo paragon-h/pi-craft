@@ -138,7 +138,7 @@ export default async function (pi: ExtensionAPI) {
   // 注册 subagent 工具
   // - subagentEnabled=false: 工具返回禁用提示
   // - parallelEnabled=false: 仅 inline 单代理模式可用
-  registerSubagentTool(pi, subagent, statusline, subagentEnabled, parallelEnabled);
+  registerSubagentTool(pi, subagent, statusline, tracker, subagentEnabled, parallelEnabled);
 
   let engine: WorkflowEngine | null = null;
   const managers: Managers = { engine: null, tracker, subagent, statusline, parallelEnabled };

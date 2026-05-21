@@ -83,6 +83,9 @@ export function formatThroughput(tokens: number, elapsedMs: number): string {
 export class TokenTracker {
   private stats: TokenStats;
   private turnIndex = 0;
+  private subagentTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+  // per-subagent 明细
+  private subagentDetails: Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }> = new Map();
   private static CUSTOM_TYPE = "craft-token-stats";
 
   constructor() {
@@ -183,6 +186,74 @@ export class TokenTracker {
 
   getStats(): TokenStats {
     return this.stats;
+  }
+
+  /** 记录 subagent（独立进程）的 token 消耗，按 agent 名分组 */
+  recordSubagentUsage(agentName: string, usage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number }): void {
+    this.subagentTokens.input += usage.input;
+    this.subagentTokens.output += usage.output;
+    this.subagentTokens.cacheRead += usage.cacheRead;
+    this.subagentTokens.cacheWrite += usage.cacheWrite;
+    this.subagentTokens.cost += usage.cost;
+    this.subagentTokens.turns++;
+
+    const existing = this.subagentDetails.get(agentName) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+    existing.input += usage.input;
+    existing.output += usage.output;
+    existing.cacheRead += usage.cacheRead;
+    existing.cacheWrite += usage.cacheWrite;
+    existing.cost += usage.cost;
+    existing.turns++;
+    this.subagentDetails.set(agentName, existing);
+  }
+
+  getSubagentTokens() {
+    return { ...this.subagentTokens };
+  }
+
+  /** 每个 subagent 的明细 */
+  getSubagentBreakdown(): Array<{ agent: string; input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }> {
+    return Array.from(this.subagentDetails.entries())
+      .map(([agent, s]) => ({ agent, ...s }))
+      .sort((a, b) => b.cost - a.cost);
+  }
+
+  /** 总消耗 = 主 agent + subagent */
+  getTotalAllIn(): { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number } {
+    // 聚合所有 model 的 cache 数据
+    let cacheRead = 0;
+    let cacheWrite = 0;
+    for (const [, stats] of this.stats.byModel) {
+      cacheRead += stats.cacheRead;
+      cacheWrite += stats.cacheWrite;
+    }
+    return {
+      input: this.stats.total.input + this.subagentTokens.input,
+      output: this.stats.total.output + this.subagentTokens.output,
+      cacheRead: cacheRead + this.subagentTokens.cacheRead,
+      cacheWrite: cacheWrite + this.subagentTokens.cacheWrite,
+      cost: this.stats.total.cost + this.subagentTokens.cost,
+      turns: this.stats.total.turns + this.subagentTokens.turns,
+    };
+  }
+
+  /** 缓存命中率 = cacheRead / (cacheRead + input)，按 model 分别计算 */
+  getCacheHitRate(): { rate: number; cacheRead: number; input: number; savings: number } {
+    let totalCacheRead = 0;
+    let totalInput = 0;
+    for (const [, stats] of this.stats.byModel) {
+      totalCacheRead += stats.cacheRead;
+      totalInput += stats.input;
+    }
+    // 加上 subagent 的
+    totalCacheRead += this.subagentTokens.cacheRead;
+    totalInput += this.subagentTokens.input;
+
+    const total = totalCacheRead + totalInput;
+    const rate = total > 0 ? totalCacheRead / total : 0;
+    // Deepseek: cache hit ~$0.07/M vs miss ~$0.27/M, 节省约 74%
+    const savings = totalCacheRead > 0 ? totalCacheRead * 0.00000027 * 0.74 : 0;
+    return { rate, cacheRead: totalCacheRead, input: totalInput, savings };
   }
 
   getModelStats(): Array<{ model: string; stats: ModelStats }> {

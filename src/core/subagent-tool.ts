@@ -16,6 +16,7 @@ import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import type { SubagentManager, SubagentDetails, SingleResult } from "../core/subagent-manager.js";
 import { formatTokens, formatCost } from "../core/token-tracker.js";
+import type { TokenTracker } from "../core/token-tracker.js";
 import type { StatuslineManager } from "../ui/statusline.js";
 
 // ─── 参数 Schema ───────────────────────────────────────────────
@@ -230,6 +231,7 @@ export function registerSubagentTool(
   pi: ExtensionAPI,
   subagent: SubagentManager,
   statusline: StatuslineManager,
+  tracker: TokenTracker,
   enabled = true,
   parallelEnabled = false,
 ) {
@@ -298,6 +300,12 @@ export function registerSubagentTool(
               details: partial.details,
             });
           });
+          // 记录 subagent token 消耗（按 agent 名分组）
+          for (const r of results) {
+            if (r.usage.input > 0 || r.usage.output > 0) {
+              tracker.recordSubagentUsage(r.agent, r.usage);
+            }
+          }
           const ok = results.filter((r) => r.exitCode === 0).length;
           statusline.updateSubagent(null);
 
@@ -327,6 +335,13 @@ export function registerSubagentTool(
             if (r.exitCode !== 0) break;
           }
           statusline.updateSubagent(null);
+
+          // 记录 subagent token 消耗（按 agent 名分组）
+          for (const r of chainResults) {
+            if (r.usage.input > 0 || r.usage.output > 0) {
+              tracker.recordSubagentUsage(r.agent, r.usage);
+            }
+          }
 
           const outputs = chainResults.map((r, i) => {
             const output = getOutput(r);
