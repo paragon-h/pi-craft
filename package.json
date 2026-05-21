@@ -21,6 +21,11 @@
         "type": "boolean",
         "default": false,
         "description": "Enable parallel/chain subagent execution via isolated processes. When disabled, only inline single-agent delegation is available."
+      },
+      "enableCwdGuard": {
+        "type": "boolean",
+        "default": true,
+        "description": "Restrict write/edit/bash write operations to the project working directory. Read operations are unrestricted."
       }
     }
   },

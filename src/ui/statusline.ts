@@ -20,6 +20,7 @@ const STATUS_KEYS = {
   subagent: "craft-subagent",
   scenario: "craft-scenario",
   parallel: "craft-parallel",
+  guard: "craft-guard",
 } as const;
 
 // ─── 工作流阶段 → 图标映射 ─────────────────────────────────────
@@ -128,6 +129,18 @@ export class StatuslineManager {
       this.ctx.ui.setStatus(STATUS_KEYS.parallel, t.fg("accent", "⚡∥"));
     } else {
       this.ctx.ui.setStatus(STATUS_KEYS.parallel, undefined);
+    }
+  }
+
+  // ─── 工作目录限制 ──────────────────────────────────────
+
+  updateGuard(enabled: boolean): void {
+    if (!this.ctx?.hasUI) return;
+    const t = this.theme();
+    if (enabled) {
+      this.ctx.ui.setStatus(STATUS_KEYS.guard, t.fg("success", "🛡"));
+    } else {
+      this.ctx.ui.setStatus(STATUS_KEYS.guard, undefined);
     }
   }
 

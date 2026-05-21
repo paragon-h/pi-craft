@@ -18,6 +18,7 @@ import { SubagentManager } from "./core/subagent-manager";
 import { registerSubagentTool } from "./core/subagent-tool";
 import { TokenTracker, setupTokenTracking } from "./core/token-tracker";
 import { WorkflowEngine, READONLY_TOOLS, FULL_TOOLS, generateTopicSlug } from "./core/workflow-engine";
+import { checkCwdGuard } from "./core/cwd-guard";
 import { StatuslineManager } from "./ui/statusline";
 
 // ─── 场景注册 ──────────────────────────────────────────────────
@@ -97,7 +98,7 @@ export default async function (pi: ExtensionAPI) {
 
   // 读取 subagent 开关配置（优先 pi.craftConfig，fallback 读取 settings.json）
   let craftConfig = (pi as Record<string, unknown>).craftConfig as
-    | { enableSubagent?: boolean; enableParallelSubagent?: boolean; enabledScenarios?: string[]; disabledScenarios?: string[] }
+    | { enableSubagent?: boolean; enableParallelSubagent?: boolean; enableCwdGuard?: boolean; enabledScenarios?: string[]; disabledScenarios?: string[] }
     | undefined;
 
   // fallback: pi 可能未注入 craftConfig，直接从文件读取
@@ -122,6 +123,7 @@ export default async function (pi: ExtensionAPI) {
 
   const subagentEnabled = craftConfig?.enableSubagent !== false; // 默认开启
   const parallelEnabled = craftConfig?.enableParallelSubagent === true; // 默认关闭
+  const cwdGuardEnabled = craftConfig?.enableCwdGuard !== false; // 默认开启
 
   if (subagentEnabled) {
     if (fs.existsSync(builtinAgentsDir)) {
@@ -205,6 +207,7 @@ export default async function (pi: ExtensionAPI) {
         statusline.updateScenario(enabledScenarios[0] ?? workflowType);
         statusline.updateTokens(tracker);
         statusline.updateParallel(parallelEnabled);
+        statusline.updateGuard(cwdGuardEnabled);
         pi.sendUserMessage(
           `Session restored. You are in the **${stageName}** phase of the coding workflow. Continue from where you left off.`,
         );
@@ -219,6 +222,7 @@ export default async function (pi: ExtensionAPI) {
         }
         statusline.updateTokens(tracker);
         statusline.updateParallel(parallelEnabled);
+        statusline.updateGuard(cwdGuardEnabled);
       }, 50);
     }
   });
@@ -236,12 +240,84 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ─── 工具管控（只读阶段拦截） ──────────────────────────
-  pi.on("tool_call", async (event) => {
+  pi.on("tool_call", async (event, ctx) => {
     // 修正 write 工具参数名：file_path → path
     if (event.toolName === "write" && (event.input as Record<string, unknown>).file_path && !(event.input as Record<string, unknown>).path) {
       (event.input as Record<string, unknown>).path = (event.input as Record<string, unknown>).file_path;
       delete (event.input as Record<string, unknown>).file_path;
     }
+
+    // ── 全局规则：写操作限制在工作目录内（默认开启）────
+    if (cwdGuardEnabled) {
+      const reason = checkCwdGuard(event.toolName, event.input as Record<string, unknown>, ctx.cwd);
+      if (reason) {
+        const ok = await ctx.ui.confirm("⚠️ 外部写操作", `${reason}\n\n是否允许此操作？`);
+        if (!ok) return { block: true, reason: `用户拒绝了工作目录外的写操作。\n${reason}` };
+      }
+    }
+
+    // ── 全局规则：危险命令权限校验 ──────────────────────
+    if (event.toolName === "bash") {
+      const command = (event.input.command as string) || "";
+      const dangerousPatterns = [
+        { pattern: /(?:^|\s)rm\s/, label: "删除文件/目录 (rm)" },
+        { pattern: /(?:^|\s)mv\s/, label: "移动文件 (mv)" },
+        { pattern: /(?:^|\s)cp\s/, label: "复制文件 (cp)" },
+        { pattern: /chmod/, label: "修改权限 (chmod)" },
+        { pattern: /chown/, label: "修改所有者 (chown)" },
+        { pattern: /(?:^|\s)kill/, label: "终止进程 (kill)" },
+        { pattern: /sudo/, label: "提权操作 (sudo)" },
+        { pattern: /npm\s+install|yarn\s+add|pnpm\s+add|pip\s+install|cargo\s+install/, label: "安装依赖包" },
+        { pattern: /git\s+push/, label: "Git push" },
+        { pattern: /git\s+commit/, label: "Git commit" },
+        { pattern: /git\s+merge/, label: "Git merge" },
+        { pattern: /git\s+rebase/, label: "Git rebase" },
+        { pattern: /git\s+reset\s+--hard/, label: "Git reset --hard" },
+        { pattern: /(?:^|\s)docker\s/, label: "Docker 操作" },
+        { pattern: /(?:^|\s)make\s/, label: "Make 构建" },
+      ];
+      for (const { pattern, label } of dangerousPatterns) {
+        if (pattern.test(command)) {
+          const preview = command.length > 120 ? command.slice(0, 120) + "..." : command;
+          const ok = await ctx.ui.confirm(
+            `⚠️ 危险命令: ${label}`,
+            `命令: ${preview}\n\n此命令可能产生不可逆影响。是否允许执行？`,
+          );
+          if (!ok) return { block: true, reason: `用户拒绝了危险命令: ${label}\n命令: ${preview}` };
+          break; // 只弹一次确认
+        }
+      }
+    }
+
+    // write/edit 敏感文件也需确认
+    if (event.toolName === "write" || event.toolName === "edit") {
+      const filePath = ((event.input.path || event.input.file_path || "") as string).toLowerCase();
+      const sensitiveFiles = [
+        { pattern: /\.env$/, label: "环境变量文件 (.env)" },
+        { pattern: /package\.json$/, label: "package.json" },
+        { pattern: /package-lock|yarn\.lock|pnpm-lock/, label: "依赖锁文件" },
+        { pattern: /go\.mod$/, label: "go.mod" },
+        { pattern: /go\.sum$/, label: "go.sum" },
+        { pattern: /dockerfile$/i, label: "Dockerfile" },
+        { pattern: /docker-compose/, label: "Docker Compose" },
+        { pattern: /Makefile$/, label: "Makefile" },
+        { pattern: /tsconfig/, label: "TypeScript 配置" },
+        { pattern: /\.gitignore$/, label: ".gitignore" },
+        { pattern: /credentials|secret|token|key\.pem|id_rsa/, label: "凭证/密钥文件" },
+      ];
+      for (const { pattern, label } of sensitiveFiles) {
+        if (pattern.test(filePath)) {
+          const ok = await ctx.ui.confirm(
+            `⚠️ 修改敏感文件: ${label}`,
+            `文件: ${filePath}\n\n修改此文件可能影响项目配置或安全性。是否允许？`,
+          );
+          if (!ok) return { block: true, reason: `用户拒绝了敏感文件修改: ${label}` };
+          break;
+        }
+      }
+    }
+
+    // ── 工作流阶段工具管控 ──────────────────────────────
     const currentEngine = managers.engine;
     if (!currentEngine || !currentEngine.isActive()) return;
 
@@ -285,7 +361,7 @@ export default async function (pi: ExtensionAPI) {
       // 检查是否写入到 .pi/craft/plans/（允许）
       const writesToPlans = command.includes(".pi/craft/plans/");
 
-      // 绝对禁止的写入操作（除非目标是 plans 目录）
+      // 只读阶段禁止写入操作（除非目标是 plans 目录）
       const writeOps = [">", " >>", "tee ", "dd ", "mkfifo"];
       const hasWriteOp = writeOps.some((op) => command.includes(op));
 
@@ -296,35 +372,7 @@ export default async function (pi: ExtensionAPI) {
         };
       }
 
-      // 危险命令（在任何阶段都拦截）
-      const alwaysDangerous = [
-        "rm ", "mv ", "cp ", "chmod", "chown", "kill", "sudo",
-        "npm install", "yarn add", "pnpm add", "pip install", "cargo install",
-        "git push", "git commit", "git merge", "git rebase", "git reset --hard",
-        "docker", "make ",
-      ];
-      const hasDangerous = alwaysDangerous.some((d) => command.includes(d));
-
-      // 安全前缀
-      const safePrefixes = [
-        "ls ", "cat ", "head ", "tail ", "wc ", "stat ",
-        "find ", "grep ", "echo ", "pwd", "whoami", "which ",
-        "node -v", "node --version", "npm -v", "tsc --", "npx --version",
-        "git log", "git diff", "git status", "git branch", "git show",
-        "git stash list", "git remote", "env", "printenv", "uname",
-      ];
-      const startsSafe = safePrefixes.some((p) => command.startsWith(p));
-
-      if (hasDangerous || !startsSafe) {
-        // git 子命令中安全的那些
-        const isGitSafe = command.startsWith("git ") && !alwaysDangerous.some((d) => command.includes(d));
-        if (!isGitSafe) {
-          return {
-            block: true,
-            reason: `当前只读阶段不允许此命令: ${command.slice(0, 60)}...\n允许: ls, cat, head, tail, grep, find, wc, git log/diff/status, echo`,
-          };
-        }
-      }
+      // 危险命令已由全局规则处理，这里只做只读限制
     }
   });
 
