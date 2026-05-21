@@ -89,15 +89,13 @@ Core initializes managers and calls `initState()`. Scenarios read via `getState(
 
 ## Commands
 - `/tokens` — Token usage dashboard (Core)
-- `/coding:develop` — Enter coding develop workflow (interactive, auto slug)
-- `/coding:review [target]` — Start code review workflow
+- `/coding:develop [stage]` — Enter coding develop workflow (interactive, auto slug)
+- `/coding:review [target] [stage]` — Start code review workflow
 - `/coding:status` — Show current workflow status
 - `/coding:resume` — Resume an interrupted workflow
 - `/coding:rollback` — Rollback to previous stage
 - `/coding:abort` — Abort current workflow
-- `/travel` — Travel scenario (placeholder)
-- `/stock` — Stock analysis scenario (placeholder)
-- `/knowledge` — Knowledge management scenario (placeholder)
+- `/travel` `/stock` `/knowledge` — Placeholder scenarios (disabled by default)
 
 ## Config
 In `settings.json` under `craft`:

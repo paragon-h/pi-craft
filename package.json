@@ -7,10 +7,7 @@
   "pi": {
     "extensions": [
       "./src/index.ts",
-      "./src/scenarios/coding/index.ts",
-      "./src/scenarios/travel/index.ts",
-      "./src/scenarios/stock/index.ts",
-      "./src/scenarios/knowledge/index.ts"
+      "./src/scenarios/coding/index.ts"
     ],
     "video": "",
     "image": "",
