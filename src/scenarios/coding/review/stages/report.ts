@@ -1,9 +1,9 @@
 /**
  * Coding Review — 审查报告阶段
- *
- * 只读阶段 + 可选修复。产出 review-report.md。
- * 询问用户如何处理发现的问题。
  */
+
+import type { ReviewContext } from "../index";
+import { getNextStage, extractLastAssistantText, buildStagePrompt } from "../flow";
 
 export const stage = "report";
 export const label = "Report";
@@ -14,30 +14,50 @@ export const subagentNames = ["implementer"];
 
 export const prompt = `[REVIEW REPORT PHASE — READ-ONLY]
 
-You are generating the review report. You CANNOT modify code unless user chooses auto-fix.
+★ Write report to: DOCUMENT_PATH
+★ Analysis and context under: PLANS_DIR
 
-1. Generate a comprehensive review report and write it:
-   Format:
-   - Review Summary (total files, total findings by severity)
-   - Findings by Severity
-     - 🔴 Critical (N findings)
-     - 🟡 Major (N findings)
-     - 🔵 Minor (N findings)
-     - 💡 Suggestions (N)
-   - Per-Finding Details:
-     - Severity, File, Line range, Issue description, Fix suggestion
-   - Overall Assessment (1-3 sentences)
+1. Read the analysis from PLANS_DIR.
+2. Summarize findings, prioritize issues by severity.
+3. For critical issues, ask user if they want auto-fix (use [APPROVAL_NEEDED]).
+4. Write the final review report to DOCUMENT_PATH.
+5. Add [STAGE_COMPLETE] when done.`;
 
-2. Present a summary to the user
+export function register(rc: ReviewContext): void {
+  const { pi, engine, ctx } = rc;
 
-3. Ask the user what to do:
-   A. Auto-fix all fixable issues (each fix will need approval)
-   B. Handle manually — I'll pick which to fix
-   C. View report only — no changes
+  pi.on("before_agent_start", async (event) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(rc, prompt) };
+  });
 
-4. If A: Enter fix mode — for each fixable issue, present the fix and add [APPROVAL_NEEDED]
-   Then use edit/write tools to apply
-   If B: List issues and ask which to fix first
-   If C: Add [STAGE_COMPLETE]
+  pi.on("agent_end", async (event, _ctx) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    const lastText = extractLastAssistantText(event.messages);
 
-After all fixes done (or user picks C), add [STAGE_COMPLETE]`;
+    if (lastText.includes("[STAGE_COMPLETE]")) {
+      const next = getNextStage(stage);
+      if (next) {
+        engine.transition(next);
+        rc.statusline.updateWorkflow("coding", next);
+        pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+        ctx.ui.notify(`✅ Review → ${next}. Continue to proceed.`, "info");
+      } else {
+        engine.transition("completed");
+        rc.statusline.updateWorkflow("coding", "completed");
+        pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+        ctx.ui.setWidget("craft-progress", undefined);
+        ctx.ui.notify("✅ Code review completed!", "success");
+      }
+    }
+
+    if (lastText.includes("[APPROVAL_NEEDED]") && ctx.hasUI) {
+      const ok = await ctx.ui.confirm("Approve Fix?", "Apply this suggested fix?");
+      if (ok) {
+        pi.sendUserMessage("APPROVED. Apply the fix.", { deliverAs: "followUp" });
+      } else {
+        pi.sendUserMessage("SKIP. Move to the next issue.", { deliverAs: "followUp" });
+      }
+    }
+  });
+}

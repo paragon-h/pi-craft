@@ -2,6 +2,9 @@
  * Coding Develop — 设计阶段
  */
 
+import type { DevelopContext } from "../index";
+import { getNextStage, extractLastAssistantText, buildStagePrompt, onTransition } from "../flow";
+
 export const stage = "design";
 export const label = "Design";
 export const readOnly = true;
@@ -14,31 +17,29 @@ export const prompt = `[DESIGN PHASE — READ-ONLY · INTERACTIVE]
 ★ Write design document to: DOCUMENT_PATH
 ★ All plan documents are under: PLANS_DIR
 
-1. Read previous documents from PLANS_DIR (requirement, code-analysis)
+1. Read requirement and code analysis from PLANS_DIR.
+2. Call the architect subagent to generate a detailed design.
+3. Present the design plan to the user for feedback.
+4. Incorporate feedback and write final design to DOCUMENT_PATH.
+5. Add [STAGE_COMPLETE] when the design is approved and written.`;
 
-2. Codebase scouting:
-**If parallel subagents enabled**: use parallel scouts
-  subagent({ tasks: [
-    { agent: "scout", task: "Read requirement + code-analysis from PLANS_DIR. Extract design constraints." },
-    { agent: "scout", task: "Survey existing architecture patterns and conventions in the project." },
-  ]})
-**If parallel disabled (see SUBAGENT MODE above)**: scout yourself directly with grep/find/read
+export function register(dc: DevelopContext): void {
+  const { pi, engine, ctx } = dc;
 
-3. Architecture design:
-**If parallel subagents enabled**: subagent({ agent: "architect", task: "Design architecture for the requirement using scout findings." })
-**If parallel disabled**: design the architecture yourself based on your scouting
+  pi.on("before_agent_start", async (event) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(dc, prompt) };
+  });
 
-4. Write design to DOCUMENT_PATH. Include: Component Design, Data Flow, API Design, Dependencies, Trade-offs.
+  pi.on("agent_end", async (event, _ctx) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    const lastText = extractLastAssistantText(event.messages);
+    if (!lastText.includes("[STAGE_COMPLETE]")) return;
 
-5. FORCE INTERACTION — ask ONLY 1 question at a time, wait for answer:
-
-Question 1: "Architecture: Does the module structure and data flow look correct? Any changes?"
-→ Wait for user answer.
-
-Question 2: "Dependencies: I recommend [list]. Any alternatives or concerns?"
-→ Wait for user answer.
-
-Question 3: "Risks: The main trade-off is [X]. Acceptable, or do you prefer an alternative approach?"
-→ Wait for user answer.
-
-Only add [STAGE_COMPLETE] after all 3 questions are answered and user confirms approval.`;
+    const next = getNextStage(stage);
+    if (next) {
+      onTransition(dc, next, pi);
+      ctx.ui.notify(`${label} → ${next}`, "info");
+    }
+  });
+}

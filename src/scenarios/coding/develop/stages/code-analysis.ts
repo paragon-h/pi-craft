@@ -1,6 +1,11 @@
 /**
  * Coding Develop — 代码分析阶段
+ *
+ * 职责：注册本阶段的 prompt 注入和完成检测事件。
  */
+
+import type { DevelopContext } from "../index";
+import { getNextStage, extractLastAssistantText, buildStagePrompt, onTransition, updateWidget } from "../flow";
 
 export const stage = "code_analysis";
 export const label = "Code Analysis";
@@ -33,3 +38,27 @@ GOAL: Analyze the project structure, tech stack, and relevant code.
    Include: Tech Stack, Directory Structure, Key Modules, Dependencies, Entry Points.
 
 3. After successful write, add [STAGE_COMPLETE].`;
+
+// ─── Event Registration ────────────────────────────────────────
+
+export function register(dc: DevelopContext): void {
+  const { pi, engine, ctx } = dc;
+
+  pi.on("before_agent_start", async (event) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    ctx.ui.setWidget("craft-stage-hint", undefined);
+    return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(dc, prompt) };
+  });
+
+  pi.on("agent_end", async (event, _ctx) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    const lastText = extractLastAssistantText(event.messages);
+    if (!lastText.includes("[STAGE_COMPLETE]")) return;
+
+    const next = getNextStage(stage);
+    if (next) {
+      onTransition(dc, next, pi);
+      ctx.ui.notify(`${label} → ${next}`, "info");
+    }
+  });
+}

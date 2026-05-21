@@ -1,9 +1,12 @@
 /**
  * Coding Develop — 代码实现阶段
  *
- * 可写阶段。进入前需用户确认，进入后自由执行。
- * 并行策略：分析任务依赖和文件冲突，独立任务并行执行。
+ * 可写阶段。进入前需用户确认（testing stage 处理），进入后自由执行。
+ * 特殊行为：turn 未完成时自动推进，[STAGE_COMPLETE] → completed。
  */
+
+import type { DevelopContext } from "../index";
+import { extractLastAssistantText, buildStagePrompt, updateWidget } from "../flow";
 
 export const stage = "implementation";
 export const label = "Implementation";
@@ -14,61 +17,60 @@ export const subagentNames = ["implementer", "reviewer"];
 
 export const prompt = `[IMPLEMENTATION PHASE — FULL ACCESS · AUTO-CONTINUE]
 
-You are in the implementation phase with full permissions.
-The user has already approved — no per-change approval needed.
+★ Task breakdown: PLANS_DIR/tasks.md
+★ Todo list: PLANS_DIR/todos.md
+★ Design: PLANS_DIR/design.md
+★ Testing plan: PLANS_DIR/testing-plan.md
 
-## FILE PATHS:
-- Tasks: PLANS_DIR/tasks.md
-- Todos: PLANS_DIR/todos.md
-- Update BOTH files after every task.
+RULES:
+1. Read design and testing plan from PLANS_DIR FIRST.
+2. Break work into small tasks, write tasks.md and todos.md.
+3. Execute tasks one by one, updating todos.md as you go.
+4. When all tasks are done, add [STAGE_COMPLETE].
+5. Write tests alongside implementation — no separate "add tests" task.
+6. If you need user decision mid-task, use [APPROVAL_NEEDED].`;
 
-## AUTO-CONTINUE (CRITICAL):
-After completing a task, IMMEDIATELY start the next pending task in the SAME turn.
-Do NOT stop between tasks. Do NOT wait for user input.
-Keep executing until ALL tasks are done, then add [STAGE_COMPLETE].
+export function register(dc: DevelopContext): void {
+  const { pi, engine, ctx } = dc;
 
-## SETUP (first turn only):
-1. Read all documents from PLANS_DIR. Check testing-plan.md for strategy.
-2. Write PLANS_DIR/tasks.md: split work into tasks.
-   - **If testing is NOT skipped**: each task includes its own tests. Never create a separate "add tests" task.
-   - **If testing is skipped (option D)**: tasks are implementation-only, no test files.
-3. Write PLANS_DIR/todos.md: mirror the tasks. Include test items only if testing is enabled.
+  pi.on("before_agent_start", async (event) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(dc, prompt) };
+  });
 
-## TASK SPLITTING RULE:
-Check testing-plan.md before splitting:
-- **Testing enabled**: Every task = impl + its tests. ✅ Task: "User model + user_test.go"
-- **Testing skipped**: Tasks are impl-only. ✅ Task: "User model + DB migration"
-- Never mix: ❌ Task 1-3 impl only, Task 4 add all tests
+  pi.on("agent_end", async (event, _ctx) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
 
-## EXECUTION:
-**If parallel subagents enabled**: Group independent tasks (different files, no dependency) → parallel subagent({ tasks: [...] }). Dependent/conflicting tasks → chain or serial.
-**If parallel disabled**: Execute all tasks yourself directly, one at a time.
+    const lastText = extractLastAssistantText(event.messages);
 
-## EVERY TASK (do in this exact order):
-1. Announce "Starting Task N: [title]"
-2. Read relevant files, write/edit code（+ tests if testing is enabled）
-3. **If testing is enabled**: run tests. Fix failures before continuing.
-4. **Write PLANS_DIR/tasks.md**: mark current task done, next → in_progress
-5. **Write PLANS_DIR/todos.md**: check off \`[x]\` all items for this task. Do this BEFORE announcing task completion.
-6. Announce "Task N done." then IMMEDIATELY start next task
+    // 完成 → 结束工作流
+    if (lastText.includes("[STAGE_COMPLETE]")) {
+      engine.transition("completed");
+      dc.statusline.updateWorkflow("coding", "completed");
+      pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+      ctx.ui.setWidget("craft-progress", undefined);
+      ctx.ui.notify("🎉 Development workflow completed!", "success");
+      return;
+    }
 
-## TASK FORMAT (tasks.md):
-\`\`\`markdown
-# Tasks
-## Task 1: User model + user_test.go  (or: User model — if testing skipped)
-- Status: in_progress
-## Task 2: Auth middleware + middleware_test.go
-- Status: pending
-\`\`\`
+    // 审批门
+    if (lastText.includes("[APPROVAL_NEEDED]") && ctx.hasUI) {
+      const ok = await ctx.ui.confirm("Approve?", "Apply this change?");
+      if (ok) {
+        pi.sendUserMessage("APPROVED. Proceed.", { deliverAs: "followUp" });
+      } else {
+        pi.sendUserMessage("REJECTED. Revise.", { deliverAs: "followUp" });
+      }
+      return;
+    }
 
-## TODO FORMAT (todos.md):
-\`\`\`markdown
-# Todo
-- [ ] Task 1: Create user model
-- [ ] Task 1: Write user_test.go  ← omit this line if testing skipped
-- [ ] Task 2: Implement auth middleware
-- [ ] Task 2: Write middleware_test.go
-\`\`\`
+    // 未完成 → 自动推进下一轮
+    setTimeout(() => {
+      pi.sendUserMessage(
+        "Update tasks.md and todos.md to mark the completed task, then continue to the next task. Do not stop until all tasks are complete.",
+      );
+    }, 0);
+  });
 
-## COMPLETION:
-After all tasks done and both files fully updated, show summary and add [STAGE_COMPLETE].`;
+  pi.on("turn_end", async () => updateWidget(ctx, engine));
+}

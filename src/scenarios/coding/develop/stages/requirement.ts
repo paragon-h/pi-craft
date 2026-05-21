@@ -2,6 +2,9 @@
  * Coding Develop — 需求澄清阶段
  */
 
+import type { DevelopContext } from "../index";
+import { getNextStage, extractLastAssistantText, buildStagePrompt, onTransition } from "../flow";
+
 export const stage = "requirement";
 export const label = "Requirement";
 export const readOnly = true;
@@ -13,18 +16,28 @@ export const prompt = `[REQUIREMENT CLARIFICATION PHASE — READ-ONLY]
 ★ Final document path: DOCUMENT_PATH
 
 CRITICAL RULES:
-- Ask ONLY 1 question at a time. Never output multiple questions.
-- Each question MUST include 2-4 options labeled A / B / C / D
-- Wait for answer before asking next question
+1. Ask ONE question at a time. Wait for user answer before next question.
+2. Read the code analysis from PLANS_DIR first.
+3. Write clarified requirement to DOCUMENT_PATH after all Q&A done.
+4. Add [STAGE_COMPLETE] when the requirement document is written.`;
 
-Cover these dimensions (one question each):
-1. Feature scope — what exactly to build?
-2. User flow — how will users interact?
-3. Data/State — what data is involved?
-4. Edge cases — error handling, boundary conditions
-5. Non-functional — performance, security, accessibility
+export function register(dc: DevelopContext): void {
+  const { pi, engine, ctx } = dc;
 
-When all 5 dimensions clear:
-1. Write requirement document to DOCUMENT_PATH using write tool
-2. Include: Feature Overview, User Stories, Acceptance Criteria, Non-functional Requirements, Edge Cases, Q&A Record
-3. Add [STAGE_COMPLETE]`;
+  pi.on("before_agent_start", async (event) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(dc, prompt) };
+  });
+
+  pi.on("agent_end", async (event, _ctx) => {
+    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
+    const lastText = extractLastAssistantText(event.messages);
+    if (!lastText.includes("[STAGE_COMPLETE]")) return;
+
+    const next = getNextStage(stage);
+    if (next) {
+      onTransition(dc, next, pi);
+      ctx.ui.notify(`${label} → ${next}`, "info");
+    }
+  });
+}
