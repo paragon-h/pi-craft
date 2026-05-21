@@ -6,8 +6,16 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getState } from "../../core/registry";
 
 export default function (pi: ExtensionAPI) {
+  pi.on("session_start", async (_event, ctx) => {
+    const s = getState();
+    if (!s?.statusline) return;
+    s.statusline.bind(ctx);
+    s.statusline.updateScenario("knowledge");
+  });
+
   pi.registerCommand("knowledge", {
     description: "Knowledge management scenario",
     handler: async (_args, ctx) => {

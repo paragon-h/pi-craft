@@ -133,6 +133,7 @@ export default async function (pi: ExtensionAPI) {
     const s = guard();
     if (!s) return;
     s.statusline.bind(ctx);
+    s.statusline.updateScenario("coding");
     ensureAgentsLoaded();
 
     const engine = engineRef();
