@@ -197,8 +197,8 @@ export default async function (pi: ExtensionAPI) {
     }
   });
 
-  // ─── /craft:coding Command ─────────────────────────────
-  pi.registerCommand("craft:coding", {
+  // ─── /coding:develop Command ─────────────────────────
+  pi.registerCommand("coding:develop", {
     description: "Enter coding workflow mode - type your requirement and slug is auto-generated",
     handler: async (_args, ctx) => {
       const s = shared();
@@ -297,16 +297,9 @@ export default async function (pi: ExtensionAPI) {
     await startWorkflow(ctx, requirement);
   });
 
-  // ─── /craft Command ────────────────────────────────────
-  pi.registerCommand("craft", {
-    description: "Craft workflows: coding, review, status, resume, rollback, abort",
-    getArgumentCompletions: (prefix: string) => {
-      const subcommands = ["coding", "review", "resume", "status", "rollback", "abort"];
-      const filtered = subcommands.filter((s) => s.startsWith(prefix));
-      return filtered.length > 0
-        ? filtered.map((v) => ({ value: v, label: v }))
-        : null;
-    },
+  // ─── /coding:review Command ───────────────────────────
+  pi.registerCommand("coding:review", {
+    description: "Start code review workflow",
     handler: async (args, ctx) => {
       const s = shared();
       if (!s) {
@@ -316,138 +309,15 @@ export default async function (pi: ExtensionAPI) {
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
 
-      if (!args || args.trim() === "") {
-        ctx.ui.notify(
-          "Usage:\n  /craft coding <requirement> [topic-slug]\n  /craft review [target]\n  /craft status | resume | rollback | abort",
-          "info",
-        );
-        return;
-      }
+      const target = args?.trim() || "current git diff (uncommitted changes)";
+      const engine = WorkflowEngine.create("coding", `review: ${target}`, undefined, ctx.cwd);
+      engine.transition("scope");
+      setEngine(engine);
+      s.statusline.updateWorkflow("coding", "scope");
+      pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
 
-      const parts = args.split(/\s+/);
-      const subcommand = parts[0].toLowerCase();
-      const rest = parts.slice(1).join(" ");
-
-      switch (subcommand) {
-        case "status": {
-          const engine = engineRef();
-          if (!engine || !engine.isActive()) {
-            ctx.ui.notify("No active workflow. Use /craft coding <requirement> to start.", "info");
-          } else {
-            const ctx2 = engine.getContext();
-            const docs = engine.getDocumentPathForStage(engine.getStage());
-            ctx.ui.notify(
-              `Workflow: ${engine.getType()}/${engine.getStage()}\nTopic: ${ctx2.topicSlug}\nDocs: ${ctx2.plansDir}\nCurrent: ${docs ?? "N/A"}`,
-              "info",
-            );
-          }
-          return;
-        }
-
-        case "resume": {
-          const engine = WorkflowEngine.restore(ctx);
-          if (!engine || !engine.isActive()) {
-            ctx.ui.notify("No active workflow to resume.", "info");
-            return;
-          }
-          setEngine(engine);
-          s.statusline.updateWorkflow(engine.getType(), engine.getStage() as WorkflowStage);
-
-          if (engine.getType() !== "coding") {
-            ctx.ui.notify("Resume not supported for this workflow type.", "warning");
-            return;
-          }
-
-          await registerScenarioHandlers(ctx);
-
-          const stage = engine.getStage();
-          const stageName = STAGE_LABELS[stage] ?? stage;
-          ctx.ui.notify(`Resumed: coding/${stageName}`, "info");
-
-          setTimeout(() => pi.sendUserMessage(
-            `Workflow resumed. You are in the **${stageName}** phase. Continue from where you left off.`,
-          ), 0);
-          return;
-        }
-
-        case "rollback": {
-          const engine = engineRef();
-          if (!engine || !engine.isActive()) {
-            ctx.ui.notify("No active workflow to rollback.", "info");
-            return;
-          }
-          const prev = engine.rollback();
-          if (prev) {
-            ctx.ui.notify(`Rolled back to: ${prev}`, "info");
-            s.statusline.updateWorkflow(engine.getType(), prev as WorkflowStage);
-            pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-          } else {
-            ctx.ui.notify("Cannot rollback from current stage.", "warning");
-          }
-          return;
-        }
-
-        case "abort": {
-          const engine = engineRef();
-          if (!engine) {
-            ctx.ui.notify("No active workflow to abort.", "info");
-            return;
-          }
-          const ok = await ctx.ui.confirm("Abort workflow?", "All generated documents will be preserved.");
-          if (ok) {
-            engine.abort();
-            pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-            setEngine(null);
-            s.statusline.updateWorkflow("", "idle");
-            ctx.ui.notify("Workflow aborted. Documents preserved in .pi/craft/plans/", "info");
-          }
-          return;
-        }
-
-        case "coding": {
-          if (!rest.trim()) {
-            ctx.ui.notify("Usage: /craft coding <requirement description> [topic-slug]", "warning");
-            return;
-          }
-
-          const argParts = rest.split(/\s+/);
-          const lastPart = argParts[argParts.length - 1];
-          const isSlug = /^[a-z0-9][a-z0-9-]{0,30}$/.test(lastPart) && argParts.length > 1;
-          const topicSlug = isSlug ? argParts.pop()! : undefined;
-          const requirement = argParts.join(" ");
-
-          const engine = WorkflowEngine.create("coding", requirement, topicSlug, ctx.cwd);
-          engine.transition("code_analysis");
-          setEngine(engine);
-          s.statusline.updateWorkflow("coding", "code_analysis");
-
-          pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-
-          await registerScenarioHandlers(ctx);
-          await startWorkflow(ctx, requirement);
-          return;
-        }
-
-        case "review": {
-          const engine = WorkflowEngine.create("coding", `review: ${rest || "current changes"}`, undefined, ctx.cwd);
-          engine.transition("scope");
-          setEngine(engine);
-          s.statusline.updateWorkflow("coding", "scope");
-
-          pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-
-          await registerScenarioHandlers(ctx);
-          await startWorkflow(ctx, rest || "");
-          return;
-        }
-
-        default: {
-          ctx.ui.notify(
-            `Unknown subcommand: ${subcommand}\nTry: coding, review, status, resume, rollback, abort`,
-            "warning",
-          );
-        }
-      }
+      await registerScenarioHandlers(ctx);
+      await startWorkflow(ctx, target);
     },
   });
 }

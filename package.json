@@ -12,7 +12,6 @@
       "./src/scenarios/stock/index.ts",
       "./src/scenarios/knowledge/index.ts"
     ],
-    "prompts": ["./prompts"],
     "video": "",
     "image": "",
     "config": {

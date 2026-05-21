@@ -75,10 +75,8 @@ src/
 #### Coding Scenario Extension (`src/scenarios/coding/index.ts`)
 | Feature | Description |
 |---------|-------------|
-| `/craft:coding` | Interactive requirement input with auto slug generation |
-| `/craft coding <req> [slug]` | One-shot workflow start |
-| `/craft review [target]` | Code review workflow |
-| `/craft status\|resume\|rollback\|abort` | Workflow management |
+| `/coding:develop` | Interactive requirement input with auto slug generation |
+| `/coding:review [target]` | Code review workflow |
 | Stage prompts | `before_agent_start` injects stage-specific system prompts |
 | Stage transitions | `agent_end` detects `[STAGE_COMPLETE]` |
 | Read-only enforcement | Blocks write/edit in analysis/design phases |
@@ -90,10 +88,8 @@ Core initializes managers and calls `initState()`. Scenarios read via `getState(
 
 ## Commands
 - `/tokens` — Token usage dashboard (Core)
-- `/craft:coding` — Enter coding workflow mode (Coding scenario)
-- `/craft coding <req> [slug]` — Start coding workflow
-- `/craft review [target]` — Code review workflow
-- `/craft status | resume | rollback | abort` — Workflow management
+- `/coding:develop` — Enter coding develop workflow (interactive, auto slug)
+- `/coding:review [target]` — Start code review workflow
 - `/travel` — Travel scenario (placeholder)
 - `/stock` — Stock analysis scenario (placeholder)
 - `/knowledge` — Knowledge management scenario (placeholder)
