@@ -257,34 +257,24 @@ export default async function (pi: ExtensionAPI) {
     }
 
     // ── 全局规则：危险命令权限校验 ──────────────────────
+    // 文件操作类命令（rm/mv/cp/chmod/chown）由 cwd guard 负责边界检查，
+    // git 操作在 cwd 内允许，这里只拦截系统级危险命令
     if (event.toolName === "bash") {
       const command = (event.input.command as string) || "";
-      const dangerousPatterns = [
-        { pattern: /(?:^|\s)rm\s/, label: "删除文件/目录 (rm)" },
-        { pattern: /(?:^|\s)mv\s/, label: "移动文件 (mv)" },
-        { pattern: /(?:^|\s)cp\s/, label: "复制文件 (cp)" },
-        { pattern: /chmod/, label: "修改权限 (chmod)" },
-        { pattern: /chown/, label: "修改所有者 (chown)" },
-        { pattern: /(?:^|\s)kill/, label: "终止进程 (kill)" },
+      const systemDangerPatterns = [
         { pattern: /sudo/, label: "提权操作 (sudo)" },
-        { pattern: /npm\s+install|yarn\s+add|pnpm\s+add|pip\s+install|cargo\s+install/, label: "安装依赖包" },
-        { pattern: /git\s+push/, label: "Git push" },
-        { pattern: /git\s+commit/, label: "Git commit" },
-        { pattern: /git\s+merge/, label: "Git merge" },
-        { pattern: /git\s+rebase/, label: "Git rebase" },
-        { pattern: /git\s+reset\s+--hard/, label: "Git reset --hard" },
+        { pattern: /(?:^|\s)kill/, label: "终止进程 (kill)" },
         { pattern: /(?:^|\s)docker\s/, label: "Docker 操作" },
-        { pattern: /(?:^|\s)make\s/, label: "Make 构建" },
       ];
-      for (const { pattern, label } of dangerousPatterns) {
+      for (const { pattern, label } of systemDangerPatterns) {
         if (pattern.test(command)) {
           const preview = command.length > 120 ? command.slice(0, 120) + "..." : command;
           const ok = await ctx.ui.confirm(
-            `⚠️ 危险命令: ${label}`,
-            `命令: ${preview}\n\n此命令可能产生不可逆影响。是否允许执行？`,
+            `⚠️ 系统级命令: ${label}`,
+            `命令: ${preview}\n\n此命令影响范围超出工作目录。是否允许执行？`,
           );
-          if (!ok) return { block: true, reason: `用户拒绝了危险命令: ${label}\n命令: ${preview}` };
-          break; // 只弹一次确认
+          if (!ok) return { block: true, reason: `用户拒绝了系统级命令: ${label}\n命令: ${preview}` };
+          break;
         }
       }
     }
