@@ -209,8 +209,7 @@ export default async function (pi: ExtensionAPI) {
   pi.registerCommand("craft:coding", {
     description: "Enter coding workflow mode - type your requirement and slug is auto-generated",
     handler: async (_args, ctx) => {
-      const s = guard();
-      if (!s) return;
+      const s = state();
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
       codingInputMode = true;
@@ -319,8 +318,7 @@ export default async function (pi: ExtensionAPI) {
         : null;
     },
     handler: async (args, ctx) => {
-      const s = guard();
-      if (!s) return;
+      const s = state();
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
 
