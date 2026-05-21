@@ -119,7 +119,7 @@ export default function (pi: ExtensionAPI) {
     const { WorkflowEngine } = await import("./core/workflow-engine");
     const engine = WorkflowEngine.restore(ctx);
     const state = getState();
-    state.engine = engine;
+    if (state) state.engine = engine;
 
     // Delayed statusline update for TUI readiness
     // Use a self-calling closure to avoid stale ctx issues after session replacement

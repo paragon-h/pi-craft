@@ -1,9 +1,9 @@
 /**
  * Pi Craft — Cross-Extension Shared State Registry
  *
- * Since all extension entry points in this package share the same
- * Node.js module root, importing this module from any extension
- * gives the same singleton instance.
+ * Uses globalThis because jiti creates separate module contexts
+ * per extension entry point, so module-level variables are NOT
+ * shared across extensions within the same package.
  *
  * Core extension calls initState() on startup.
  * Scenario extensions call getState() to read.
@@ -13,6 +13,8 @@ import type { TokenTracker } from "./token-tracker";
 import type { SubagentManager } from "./subagent-manager";
 import type { StatuslineManager } from "../ui/statusline";
 import type { WorkflowEngine } from "./workflow-engine";
+
+const GLOBAL_KEY = "__pi_craft_state__";
 
 export interface CraftState {
   tracker: TokenTracker;
@@ -24,14 +26,13 @@ export interface CraftState {
   subagentEnabled: boolean;
 }
 
-const _state: Partial<CraftState> = {};
-
 /** Called once by Core extension during initialization */
 export function initState(state: CraftState): void {
-  Object.assign(_state, state);
+  (globalThis as Record<string, unknown>)[GLOBAL_KEY] = state;
 }
 
-/** Get current shared state. Scenarios read from this. */
-export function getState(): CraftState {
-  return _state as CraftState;
+/** Get current shared state. Returns null if Core hasn't initialized. */
+export function getState(): CraftState | null {
+  const s = (globalThis as Record<string, unknown>)[GLOBAL_KEY];
+  return (s && (s as CraftState).statusline) ? (s as CraftState) : null;
 }
