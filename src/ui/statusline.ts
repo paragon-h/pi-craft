@@ -19,6 +19,7 @@ const STATUS_KEYS = {
   tokens: "craft-tokens",
   subagent: "craft-subagent",
   scenario: "craft-scenario",
+  parallel: "craft-parallel",
 } as const;
 
 // ─── 工作流阶段 → 图标映射 ─────────────────────────────────────
@@ -111,6 +112,18 @@ export class StatuslineManager {
       status === "running" ? "warning" : status === "done" ? "success" : "error";
 
     this.ctx.ui.setStatus(STATUS_KEYS.subagent, t.fg(color, `${icon} ${name}`));
+  }
+
+  // ─── 并行模式 ──────────────────────────────────────────
+
+  updateParallel(enabled: boolean): void {
+    if (!this.ctx?.hasUI) return;
+    const t = this.theme();
+    if (enabled) {
+      this.ctx.ui.setStatus(STATUS_KEYS.parallel, t.fg("accent", "⚡∥"));
+    } else {
+      this.ctx.ui.setStatus(STATUS_KEYS.parallel, undefined);
+    }
   }
 
   // ─── 场景标识 ────────────────────────────────────────────

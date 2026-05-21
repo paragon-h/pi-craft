@@ -87,20 +87,21 @@ function renderCollapsed(details: SubagentDetails, theme: { fg: (c: string, t: s
 
   if (mode === "single" && results.length === 1) {
     const r = results[0];
-    const isInline = r.messages.length === 0 && r.exitCode === 0;
+    const hasRealOutput = r.messages.length > 0;
     const ok = r.exitCode === 0;
     const icon = ok ? theme.fg("success", "✓") : theme.fg("error", "✗");
-    const output = getOutput(r).slice(0, 200);
     let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))} ${theme.fg("muted", `(${r.agentSource})`)}`;
-    if (isInline) {
-      text += ` ${theme.fg("dim", "[inline]")}`;
-      text += `\n${theme.fg("toolOutput", r.task.slice(0, 200))}`;
-    } else if (output) {
-      text += `\n${theme.fg("toolOutput", output)}`;
+    if (hasRealOutput) {
+      const output = getOutput(r).slice(0, 200);
+      if (output) text += `\n${theme.fg("toolOutput", output)}`;
+    } else {
+      text += `\n${theme.fg("dim", r.task.slice(0, 200))}`;
+    }
+    if (r.errorMessage) {
+      text += `\n${theme.fg("error", r.errorMessage.slice(0, 200))}`;
     }
     const usageStr = fmtUsage(r);
     if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
-    text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
     return text;
   }
 
@@ -146,35 +147,32 @@ function renderExpanded(details: SubagentDetails, theme: { fg: (c: string, t: st
   container.addChild(new Spacer(1));
 
   for (const r of results) {
-    const isInline = r.messages.length === 0 && r.exitCode === 0;
     const ok = r.exitCode === 0;
     const icon = r.exitCode === -1 ? "⏳" : ok ? "✓" : "✗";
     const color = r.exitCode === -1 ? "warning" : ok ? "success" : "error";
 
-    container.addChild(new Text(`${theme.fg(color, icon)} ${theme.fg("accent", r.agent)} ${theme.fg("muted", `(${r.agentSource})${isInline ? " [inline delegation]" : ""}`)}`, 0, 0));
+    container.addChild(new Text(`${theme.fg(color, icon)} ${theme.fg("accent", r.agent)} ${theme.fg("muted", `(${r.agentSource})`)}`, 0, 0));
     container.addChild(new Text(theme.fg("dim", `Task: ${r.task.slice(0, 200)}`), 0, 0));
     container.addChild(new Spacer(1));
 
-    // Tool calls (only for process-spawned results)
-    if (!isInline) {
-      const items = getDisplayItems(r);
-      if (items.length > 0) {
-        container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
-        for (const item of items.slice(-20)) {
-          if (item.type === "toolCall") {
-            container.addChild(new Text(theme.fg("muted", "→ ") + fmtToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
-          }
+    // Tool calls
+    const items = getDisplayItems(r);
+    if (items.length > 0) {
+      container.addChild(new Text(theme.fg("muted", "─── Tool Calls ───"), 0, 0));
+      for (const item of items.slice(-20)) {
+        if (item.type === "toolCall") {
+          container.addChild(new Text(theme.fg("muted", "→ ") + fmtToolCall(item.name, item.args, theme.fg.bind(theme)), 0, 0));
         }
-        container.addChild(new Spacer(1));
       }
+      container.addChild(new Spacer(1));
+    }
 
-      // Output
-      const output = getOutput(r);
-      if (output) {
-        container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
-        container.addChild(new Markdown(output.trim().slice(0, 3000), 0, 0, mdTheme));
-        container.addChild(new Spacer(1));
-      }
+    // Output
+    const output = getOutput(r);
+    if (output) {
+      container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
+      container.addChild(new Markdown(output.trim().slice(0, 3000), 0, 0, mdTheme));
+      container.addChild(new Spacer(1));
     }
 
     // Stats
@@ -239,8 +237,8 @@ export function registerSubagentTool(
     name: "subagent",
     label: "Subagent",
     description: [
-      "Delegate tasks to specialized subagents.",
-      "Single mode (always available): injects agent system prompt inline — main agent executes directly.",
+      "Delegate tasks to specialized subagents by injecting their identity into the current session.",
+      "Single mode: injects the subagent's system prompt as a steering message — the main agent becomes the subagent in the next turn.",
       parallelEnabled
         ? "Parallel/chain mode: spawns isolated pi processes for concurrent execution."
         : "Parallel/chain mode is disabled (enable with enableParallelSubagent config).",
@@ -342,7 +340,9 @@ export function registerSubagentTool(
         }
       }
 
-      // ─── Single — inline delegation（当前 session 直接执行）───
+      // ─── Single — 注入 steering message 到当前 agent ────
+      // 不 spawn 独立进程，而是把 subagent 的 system prompt + task
+      // 作为 steering message 注入，主 agent 在下一轮自动扮演 subagent
       if (params.agent && params.task) {
         const agent = subagent.getAgent(params.agent);
         if (!agent) {
@@ -354,38 +354,51 @@ export function registerSubagentTool(
 
         statusline.updateSubagent(params.agent, "running");
 
-        // Inline delegation: directly inject agent system prompt + task into the current session.
-        // The main agent internalizes the delegated identity and does the work directly.
-        const inlinePrompt = [
-          `## 🏗 Subagent Delegation: **${agent.name}** (${agent.source})`,
+        // 构建 subagent 身份注入消息
+        const delegationMsg = [
+          `## 🏗 Subagent Delegation: **${agent.name}**`,
           ``,
-          `You are now acting as the **${agent.name}** subagent. Internalize the system prompt below and execute the task directly — do NOT call subagent again for this.`,
+          `You are now the **${agent.name}** subagent. Adopt this identity fully — use only the tools below, follow the output format, and complete the task.`,
           ``,
-          `### Agent System Prompt:`,
+          `### Identity & Instructions:`,
           agent.systemPrompt,
           ``,
           `### Task:`,
           params.task,
           ``,
           `---`,
-          `Complete this task now using your available tools. When finished, state the result clearly.`,
+          `Execute the task now. Use your available tools. When done, output the results clearly.`,
         ].join("\n");
 
-        const inlineResult: SingleResult = {
-          agent: params.agent,
-          agentSource: agent.source,
-          task: params.task,
-          exitCode: 0,
-          messages: [],
-          stderr: "",
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-        };
+        // 注入为 steering message：当前轮 tool 执行完毕后，下轮 LLM 调用前生效
+        pi.sendMessage({
+          customType: "subagent-delegation",
+          content: delegationMsg,
+          display: false,
+        }, {
+          deliverAs: "steer",
+        });
 
         statusline.updateSubagent(params.agent, "done");
 
+        // 返回简短确认，真正的 subagent 输出将在下一轮产生
         return {
-          content: [{ type: "text", text: inlinePrompt }],
-          details: { mode: "single", results: [inlineResult] },
+          content: [{
+            type: "text",
+            text: `✅ Delegated to **${params.agent}** (${agent.source}). Executing in next turn...`,
+          }],
+          details: {
+            mode: "single",
+            results: [{
+              agent: params.agent,
+              agentSource: agent.source,
+              task: params.task,
+              exitCode: 0,
+              messages: [],
+              stderr: "",
+              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
+            }],
+          },
         };
       }
 

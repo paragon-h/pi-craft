@@ -36,7 +36,7 @@ const AUTO_TRIGGER: Record<string, string> = {
   requirement: "Begin the requirement clarification phase. Ask me ONE question at a time.",
   design: "Begin the design phase. Read the documents and call the architect subagent.",
   testing: "Begin the testing strategy phase. Ask me to choose a testing approach.",
-  // implementation 不自动触发，需要用户确认
+  implementation: "Begin the implementation phase. Read all documents from PLANS_DIR, generate the task breakdown, and start coding.",
 };
 
 function getNextStage(current: WorkflowStage): WorkflowStage | null {
@@ -52,6 +52,7 @@ export interface DevelopContext {
   subagent: SubagentManager;
   tracker: TokenTracker;
   statusline: StatuslineManager;
+  parallelEnabled: boolean;
 }
 
 export function register(dc: DevelopContext): void {
@@ -70,10 +71,15 @@ export function register(dc: DevelopContext): void {
     const docPath = engine.getDocumentPathForStage(currentStage) ?? "";
     const plansDir = engine.getContext().plansDir;
 
-    // 替换路径占位符（精确匹配，不含尖括号）
+    // 替换路径占位符 + 子代理模式提示
+    const subagentHint = dc.parallelEnabled
+      ? "\n\n## SUBAGENT MODE: PARALLEL ENABLED\nYou CAN use parallel subagents. Group independent tasks with subagent({ tasks: [...] }). Dependent tasks with subagent({ chain: [...] })."
+      : "\n\n## SUBAGENT MODE: DIRECT EXECUTION\nParallel subagents are DISABLED. Execute all work yourself directly. Do NOT call the subagent tool — it will not help.";
+
     const fullPrompt = stageDef.prompt
       .replace(/DOCUMENT_PATH/g, docPath)
-      .replace(/PLANS_DIR/g, plansDir);
+      .replace(/PLANS_DIR/g, plansDir)
+      + subagentHint;
 
     return {
       systemPrompt: (event.systemPrompt ?? "") + "\n\n" + fullPrompt,
@@ -136,6 +142,12 @@ export function register(dc: DevelopContext): void {
         ctx.ui.setWidget("craft-progress", undefined);
         ctx.ui.notify("🎉 Development workflow completed!", "success");
       }
+    }
+
+    // 实现阶段：turn 结束但未完成 → 自动推进下一轮
+    // LLM 可能在 task 之间自然停下（输出长、达到 limit 等），强制继续
+    if (currentStage === "implementation" && !lastText.includes("[STAGE_COMPLETE]") && !lastText.includes("[APPROVAL_NEEDED]")) {
+      setTimeout(() => pi.sendUserMessage("Update tasks.md and todos.md to mark the completed task, then continue to the next task. Do not stop until all tasks are complete."), 0);
     }
 
     // 审批门（仅用于 review 场景的修复确认，develop 场景在 implementation 入口已完成确认）

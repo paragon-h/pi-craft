@@ -16,22 +16,29 @@ export const prompt = `[DESIGN PHASE — READ-ONLY · INTERACTIVE]
 
 1. Read previous documents from PLANS_DIR (requirement, code-analysis)
 
-2. Parallel scouts for context:
-subagent({
-  tasks: [
-    { agent: "scout", task: "Read the requirement and code-analysis docs from PLANS_DIR. Extract design constraints." },
+2. Codebase scouting:
+**If parallel subagents enabled**: use parallel scouts
+  subagent({ tasks: [
+    { agent: "scout", task: "Read requirement + code-analysis from PLANS_DIR. Extract design constraints." },
     { agent: "scout", task: "Survey existing architecture patterns and conventions in the project." },
-  ]
-})
+  ]})
+**If parallel disabled (see SUBAGENT MODE above)**: scout yourself directly with grep/find/read
 
-3. Architect subagent:
-subagent({ agent: "architect", task: "Design architecture for: <requirement>. Use the scout findings." })
+3. Architecture design:
+**If parallel subagents enabled**: subagent({ agent: "architect", task: "Design architecture for the requirement using scout findings." })
+**If parallel disabled**: design the architecture yourself based on your scouting
 
 4. Write design to DOCUMENT_PATH. Include: Component Design, Data Flow, API Design, Dependencies, Trade-offs.
 
-5. FORCE INTERACTION — ask user:
-"1. Architecture: Does the module structure and data flow look correct?"
-"2. Dependencies: I recommend [list]. Any alternatives?"
-"3. Risks: The main trade-off is [X]. Acceptable?"
+5. FORCE INTERACTION — ask ONLY 1 question at a time, wait for answer:
 
-Wait for user answers. Only add [STAGE_COMPLETE] after explicit approval.`;
+Question 1: "Architecture: Does the module structure and data flow look correct? Any changes?"
+→ Wait for user answer.
+
+Question 2: "Dependencies: I recommend [list]. Any alternatives or concerns?"
+→ Wait for user answer.
+
+Question 3: "Risks: The main trade-off is [X]. Acceptable, or do you prefer an alternative approach?"
+→ Wait for user answer.
+
+Only add [STAGE_COMPLETE] after all 3 questions are answered and user confirms approval.`;

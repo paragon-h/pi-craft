@@ -44,6 +44,7 @@ const codingScenario = {
       subagent: managers.subagent,
       tracker: managers.tracker,
       statusline: managers.statusline,
+      parallelEnabled: managers.parallelEnabled,
     };
 
     // 根据当前工作流阶段判断属于哪个子场景

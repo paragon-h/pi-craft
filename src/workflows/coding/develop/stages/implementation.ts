@@ -12,73 +12,63 @@ export const tools = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 export const documentSuffix = "tasks";
 export const subagentNames = ["implementer", "reviewer"];
 
-export const prompt = `[IMPLEMENTATION PHASE — FULL ACCESS · PARALLEL WITH CONFLICT DETECTION]
+export const prompt = `[IMPLEMENTATION PHASE — FULL ACCESS · AUTO-CONTINUE]
 
 You are in the implementation phase with full permissions.
 The user has already approved — no per-change approval needed.
 
-## SETUP:
-1. Read all documents from PLANS_DIR
-2. Generate Task breakdown → write tasks.md
-3. Generate Todo list → write todos.md
+## FILE PATHS:
+- Tasks: PLANS_DIR/tasks.md
+- Todos: PLANS_DIR/todos.md
+- Update BOTH files after every task.
 
-## PARALLEL EXECUTION RULES (CRITICAL):
-Before running tasks in parallel, you MUST analyze:
-1. **File conflicts**: Do any tasks modify the SAME file? If yes → serial only
-2. **Dependencies**: Does Task B import/use code created by Task A? If yes → serial only
-3. **Independent**: No shared files AND no dependency → CAN run parallel
+## AUTO-CONTINUE (CRITICAL):
+After completing a task, IMMEDIATELY start the next pending task in the SAME turn.
+Do NOT stop between tasks. Do NOT wait for user input.
+Keep executing until ALL tasks are done, then add [STAGE_COMPLETE].
 
-### Safe parallel example:
-Task 1: Create src/models/user.go (new file)
-Task 2: Create src/models/session.go (new file)
-→ Different files, no dependency → PARALLEL ✓
+## SETUP (first turn only):
+1. Read all documents from PLANS_DIR. Check testing-plan.md for strategy.
+2. Write PLANS_DIR/tasks.md: split work into tasks.
+   - **If testing is NOT skipped**: each task includes its own tests. Never create a separate "add tests" task.
+   - **If testing is skipped (option D)**: tasks are implementation-only, no test files.
+3. Write PLANS_DIR/todos.md: mirror the tasks. Include test items only if testing is enabled.
 
-### Must be serial example:
-Task 1: Create src/middleware/auth.go
-Task 2: Modify src/main.go to use auth middleware
-→ Task 2 depends on Task 1 → SERIAL only ✗
-
-### Conflict example:
-Task 1: Modify src/handlers/auth.go (add login)
-Task 2: Modify src/handlers/auth.go (add refresh)
-→ Same file → SERIAL only ✗
+## TASK SPLITTING RULE:
+Check testing-plan.md before splitting:
+- **Testing enabled**: Every task = impl + its tests. ✅ Task: "User model + user_test.go"
+- **Testing skipped**: Tasks are impl-only. ✅ Task: "User model + DB migration"
+- Never mix: ❌ Task 1-3 impl only, Task 4 add all tests
 
 ## EXECUTION:
-1. Group independent tasks → run with parallel subagents:
-   subagent({
-     tasks: [
-       { agent: "implementer", task: "Implement Task 1: ..." },
-       { agent: "implementer", task: "Implement Task 3: ..." },
-     ]
-   })
+**If parallel subagents enabled**: Group independent tasks (different files, no dependency) → parallel subagent({ tasks: [...] }). Dependent/conflicting tasks → chain or serial.
+**If parallel disabled**: Execute all tasks yourself directly, one at a time.
 
-2. Dependent/conflicting tasks → run in chain or one at a time:
-   subagent({
-     chain: [
-       { agent: "implementer", task: "Implement Task 2: ..." },
-       { agent: "implementer", task: "Implement Task 4 (uses Task 2 output): ..." },
-     ]
-   })
+## EVERY TASK (do in this exact order):
+1. Announce "Starting Task N: [title]"
+2. Read relevant files, write/edit code（+ tests if testing is enabled）
+3. **If testing is enabled**: run tests. Fix failures before continuing.
+4. **Write PLANS_DIR/tasks.md**: mark current task done, next → in_progress
+5. **Write PLANS_DIR/todos.md**: check off \`[x]\` all items for this task. Do this BEFORE announcing task completion.
+6. Announce "Task N done." then IMMEDIATELY start next task
 
-3. After each batch, run parallel reviewers:
-   subagent({
-     tasks: [
-       { agent: "reviewer", task: "Review changes for Task 1 & 3" },
-     ]
-   })
-
-4. Apply suggestions, update tasks.md + todos.md
-
-## TASK FORMAT:
+## TASK FORMAT (tasks.md):
 \`\`\`markdown
 # Tasks
-## Task 1: [Title]
-- Status: pending | in_progress | done
-- Files: path/to/file.go
-- Conflicts: none | Task N
-- Depends: none | Task N
-- Parallel: yes | no
+## Task 1: User model + user_test.go  (or: User model — if testing skipped)
+- Status: in_progress
+## Task 2: Auth middleware + middleware_test.go
+- Status: pending
+\`\`\`
+
+## TODO FORMAT (todos.md):
+\`\`\`markdown
+# Todo
+- [ ] Task 1: Create user model
+- [ ] Task 1: Write user_test.go  ← omit this line if testing skipped
+- [ ] Task 2: Implement auth middleware
+- [ ] Task 2: Write middleware_test.go
 \`\`\`
 
 ## COMPLETION:
-After all tasks done, show summary and add [STAGE_COMPLETE].`;
+After all tasks done and both files fully updated, show summary and add [STAGE_COMPLETE].`;

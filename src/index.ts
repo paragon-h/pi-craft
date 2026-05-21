@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { SubagentManager } from "./core/subagent-manager";
 import { registerSubagentTool } from "./core/subagent-tool";
 import { TokenTracker, setupTokenTracking } from "./core/token-tracker";
-import { WorkflowEngine, READONLY_TOOLS, FULL_TOOLS } from "./core/workflow-engine";
+import { WorkflowEngine, READONLY_TOOLS, FULL_TOOLS, generateTopicSlug } from "./core/workflow-engine";
 import { StatuslineManager } from "./ui/statusline";
 
 // ─── 场景注册 ──────────────────────────────────────────────────
@@ -39,6 +39,7 @@ interface Managers {
   tracker: TokenTracker;
   subagent: SubagentManager;
   statusline: StatuslineManager;
+  parallelEnabled: boolean;
 }
 
 // 场景懒加载
@@ -50,6 +51,13 @@ async function loadScenario(name: string): Promise<ScenarioModule | null> {
     return null;
   }
 }
+
+// ─── 模式状态 ──────────────────────────────────────────────────
+
+// coding input mode: /craft:coding 进入后，等待用户输入需求
+let codingInputMode = false;
+// 等待 LLM 生成 slug 的临时需求文本
+let pendingRequirement: string | null = null;
 
 // ─── 场景设置 ──────────────────────────────────────────────────
 
@@ -87,10 +95,31 @@ export default async function (pi: ExtensionAPI) {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const builtinAgentsDir = path.join(__dirname, "workflows", "coding", "agents");
 
-  // 读取 subagent 开关配置
-  const craftConfig = (pi as Record<string, unknown>).craftConfig as
+  // 读取 subagent 开关配置（优先 pi.craftConfig，fallback 读取 settings.json）
+  let craftConfig = (pi as Record<string, unknown>).craftConfig as
     | { enableSubagent?: boolean; enableParallelSubagent?: boolean; enabledScenarios?: string[]; disabledScenarios?: string[] }
     | undefined;
+
+  // fallback: pi 可能未注入 craftConfig，直接从文件读取
+  if (!craftConfig) {
+    const projectSettings = path.join(process.cwd(), ".pi", "settings.json");
+    const globalSettings = path.join(
+      process.env.HOME ?? process.env.USERPROFILE ?? "/tmp",
+      ".pi", "agent", "settings.json",
+    );
+    for (const sp of [projectSettings, globalSettings]) {
+      try {
+        if (fs.existsSync(sp)) {
+          const parsed = JSON.parse(fs.readFileSync(sp, "utf-8"));
+          if (parsed.craft) {
+            craftConfig = parsed.craft;
+            break;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
   const subagentEnabled = craftConfig?.enableSubagent !== false; // 默认开启
   const parallelEnabled = craftConfig?.enableParallelSubagent === true; // 默认关闭
 
@@ -112,7 +141,7 @@ export default async function (pi: ExtensionAPI) {
   registerSubagentTool(pi, subagent, statusline, subagentEnabled, parallelEnabled);
 
   let engine: WorkflowEngine | null = null;
-  const managers: Managers = { engine: null, tracker, subagent, statusline };
+  const managers: Managers = { engine: null, tracker, subagent, statusline, parallelEnabled };
 
   // ─── Token 追踪 ────────────────────────────────────────
   setupTokenTracking(pi, tracker);
@@ -152,18 +181,46 @@ export default async function (pi: ExtensionAPI) {
     engine = WorkflowEngine.restore(ctx);
     if (engine && engine.isActive()) {
       managers.engine = engine;
-      statusline.updateWorkflow(engine.getType(), engine.getStage());
-    }
 
-    // 如果未配置场景，显示设置
-    if (!(pi as Record<string, unknown>).craftConfig) {
-      statusline.updateScenario(enabledScenarios.join(","));
+      // 重新注册场景 handlers（/reload 后必需）
+      const scenario = await loadScenario(engine.getType());
+      if (scenario) {
+        scenario.register(pi, ctx, managers);
+      }
+
+      // 延迟更新状态栏 + 发送恢复消息，等 reload 完成 TUI 就绪后再执行
+      const stage = engine.getStage();
+      const workflowType = engine.getType();
+      const stageLabels: Record<string, string> = {
+        code_analysis: "code analysis",
+        requirement: "requirement clarification",
+        design: "design",
+        testing: "testing strategy",
+        implementation: "implementation",
+      };
+      const stageName = stageLabels[stage] ?? stage;
+
+      setTimeout(() => {
+        statusline.updateWorkflow(workflowType, stage);
+        statusline.updateScenario(enabledScenarios[0] ?? workflowType);
+        statusline.updateTokens(tracker);
+        statusline.updateParallel(parallelEnabled);
+        pi.sendUserMessage(
+          `Session restored. You are in the **${stageName}** phase of the coding workflow. Continue from where you left off.`,
+        );
+      }, 50);
     } else {
-      statusline.updateScenario(enabledScenarios[0] ?? "coding");
+      // 延迟更新状态栏
+      setTimeout(() => {
+        if (!(pi as Record<string, unknown>).craftConfig) {
+          statusline.updateScenario(enabledScenarios.join(","));
+        } else {
+          statusline.updateScenario(enabledScenarios[0] ?? "coding");
+        }
+        statusline.updateTokens(tracker);
+        statusline.updateParallel(parallelEnabled);
+      }, 50);
     }
-
-    // 更新 token 状态
-    statusline.updateTokens(tracker);
   });
 
   // ─── Token 状态更新 ────────────────────────────────────
@@ -271,7 +328,113 @@ export default async function (pi: ExtensionAPI) {
     }
   });
 
-  // ─── /craft 命令 ───────────────────────────────────────
+  // ─── /craft:coding 模式命令 ───────────────────────────
+  pi.registerCommand("craft:coding", {
+    description: "Enter coding workflow mode - type your requirement and slug is auto-generated",
+    handler: async (_args, ctx) => {
+      statusline.bind(ctx);
+      codingInputMode = true;
+      statusline.updateWorkflow("coding", "idle");
+      ctx.ui.notify(
+        "🔧 Coding workflow mode activated.\n\nPlease describe your requirement below. A topic-slug will be auto-generated.",
+        "info",
+      );
+    },
+  });
+
+  // ─── input 事件：拦截 coding input mode 的需求输入 ─────
+  pi.on("input", async (event, ctx) => {
+    if (!codingInputMode) return { action: "continue" };
+    statusline.bind(ctx);
+
+    const text = event.text.trim();
+
+    // 如果用户输入了命令（以 / 开头），退出模式并放行
+    if (text.startsWith("/")) {
+      codingInputMode = false;
+      pendingRequirement = null;
+      statusline.updateWorkflow("", "idle");
+      ctx.ui.notify("Exited coding workflow mode.", "info");
+      return { action: "continue" };
+    }
+
+    // 空输入，保持模式
+    if (!text) {
+      ctx.ui.notify("Please enter your requirement description.", "warning");
+      return { action: "handled" };
+    }
+
+    // 保存需求，退出输入模式
+    pendingRequirement = text;
+    codingInputMode = false;
+
+    ctx.ui.notify(
+      `📝 Captured requirement, generating topic-slug via LLM...\n   "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`,
+      "info",
+    );
+
+    // 发送 prompt 让 LLM 生成 slug
+    const slugPrompt = `Generate a concise English topic-slug (2-3 words, lowercase, hyphenated) for this development requirement. Use common tech abbreviations (e.g., auth, impl, mw, db, ws, k8s, i18n). Reply with ONLY the slug on a single line, nothing else.\n\nRequirement: ${text}`;
+
+    // 使用 setTimeout 确保 input handler 返回后再发送消息
+    setTimeout(() => pi.sendUserMessage(slugPrompt), 0);
+    return { action: "handled" };
+  });
+
+  // ─── agent_end：捕获 LLM 生成的 slug 并启动工作流 ────
+  pi.on("agent_end", async (event, ctx) => {
+    if (!pendingRequirement) return;
+    statusline.bind(ctx);
+
+    const requirement = pendingRequirement;
+    pendingRequirement = null;
+
+    // 从最后一条 assistant 消息中提取 slug
+    let slugText = "";
+    for (const msg of [...event.messages].reverse()) {
+      if (msg.role === "assistant") {
+        for (const part of msg.content) {
+          if (part.type === "text") slugText += part.text;
+        }
+        break;
+      }
+    }
+
+    // 提取第一行作为 slug，清理多余内容
+    const firstLine = slugText.split("\n")[0].trim();
+    const topicSlug = firstLine
+      .replace(/^[`'"]+|[`'"]+$/g, "")  // 去掉引号
+      .replace(/[^a-z0-9-]/g, "")       // 只保留小写字母数字连字符
+      .replace(/-+/g, "-")              // 合并连续连字符
+      .replace(/^-|-$/g, "")            // 去掉首尾连字符
+      .slice(0, 40)                     // 限制长度
+      || generateTopicSlug(requirement); // 降级 fallback
+
+    ctx.ui.notify(
+      `✅ Slug generated: ${topicSlug}\n📝 Starting coding workflow...`,
+      "info",
+    );
+
+    // 创建 develop 工作流
+    engine = WorkflowEngine.create("coding", requirement, topicSlug, ctx.cwd);
+    managers.engine = engine;
+    engine.transition("code_analysis");
+    statusline.updateWorkflow("coding", "code_analysis");
+
+    // 持久化
+    pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+
+    // 加载 coding 场景并启动
+    const scenario = await loadScenario("coding");
+    if (scenario) {
+      scenario.register(pi, ctx, managers);
+      await scenario.startWorkflow(pi, ctx, managers, requirement);
+    } else {
+      ctx.ui.notify("Coding scenario not available.", "error");
+    }
+  });
+
+  // ─── /craft 命令（传统兼容） ───────────────────────────
   pi.registerCommand("craft", {
     description: "Craft workflows: coding, review, status, scenarios",
     getArgumentCompletions: (prefix: string) => {
@@ -334,7 +497,21 @@ export default async function (pi: ExtensionAPI) {
             scenario.register(pi, ctx, managers);
           }
 
-          ctx.ui.notify(`Resumed: ${engine.getType()}/${engine.getStage()}`, "info");
+          const stage = engine.getStage();
+          const stageLabels: Record<string, string> = {
+            code_analysis: "code analysis",
+            requirement: "requirement clarification",
+            design: "design",
+            testing: "testing strategy",
+            implementation: "implementation",
+          };
+          const stageName = stageLabels[stage] ?? stage;
+          ctx.ui.notify(`Resumed: ${engine.getType()}/${stageName}`, "info");
+
+          // 发送恢复消息让 LLM 继续当前阶段
+          setTimeout(() => pi.sendUserMessage(
+            `Workflow resumed. You are in the **${stageName}** phase. Continue from where you left off.`,
+          ), 0);
           return;
         }
 

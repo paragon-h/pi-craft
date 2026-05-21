@@ -56,8 +56,15 @@ pi install -l ./packages/pi-craft
 ## 快速开始
 
 ```bash
-# 启动一个完整开发流程
+# 方式 1：进入 coding workflow 模式（推荐）
+/craft:coding
+# 然后输入需求，slug 自动生成
+
+# 方式 2：一行命令启动完整开发流程
 /craft coding "实现用户登录功能，支持 JWT token 认证" user-login
+
+# 方式 3：一行命令（不指定 slug，自动生成）
+/craft coding "实现用户登录功能，支持 JWT token 认证"
 
 # 代码审查
 /craft review
@@ -72,7 +79,8 @@ pi install -l ./packages/pi-craft
 
 | 命令 | 说明 |
 |------|------|
-| `/craft coding <需求> [topic-slug]` | 启动全流程开发 |
+| `/craft:coding` | **进入 coding workflow 模式**，然后输入需求，slug 自动生成 |
+| `/craft coding <需求> [topic-slug]` | 一行命令启动全流程开发（兼容模式） |
 | `/craft review [target] [topic-slug]` | 启动代码审查 |
 | `/craft status` | 查看当前工作流状态 |
 | `/craft resume` | 恢复上次未完成的工作流 |
@@ -83,6 +91,26 @@ pi install -l ./packages/pi-craft
 | `Ctrl+Shift+T` | 快速 Token 摘要 |
 
 ### Develop 流程详解
+
+#### 方式 1：使用 `/craft:coding` 模式（推荐）
+
+```
+/craft:coding
+# 进入 coding workflow 模式
+# 🔧 Coding workflow mode activated.
+# Please describe your requirement below. A topic-slug will be auto-generated.
+
+# 输入需求
+实现用户登录功能，支持 JWT token 认证
+
+# LLM 自动分析需求并生成英文 slug，然后启动工作流
+# 📝 Captured requirement, generating topic-slug via LLM...
+# ✅ Slug generated: user-login-jwt
+# 📝 Starting coding workflow...
+# → 进入 🔍 Code Analysis 阶段
+```
+
+#### 方式 2：使用 `/craft coding` 一行命令（兼容）
 
 ```
 /craft coding "需求描述" [topic-slug]

@@ -137,61 +137,29 @@ export function formatDate(date: Date = new Date()): string {
 }
 
 /**
- * 从需求文本生成 topic-slug（简单实现）
- * 用户可以在 /craft coding 时手动指定
+ * 从需求文本生成 topic-slug（LLM 降级 fallback）
+ * 提取英文单词并拼接，用于 LLM slug 生成失败时的兜底
  */
 export function generateTopicSlug(rawRequirement: string): string {
-  // 提取英文单词或拼音片段
+  // 提取英文单词和常见缩写
   const words = rawRequirement
-    .replace(/[^a-zA-Z0-9\u4e00-\u9fff\s-]/g, "")
+    .replace(/[^a-zA-Z0-9\s-]/g, " ")
     .split(/\s+/)
     .filter(Boolean)
-    .slice(0, 5);
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length > 1);
 
-  // 将中文转换为常见英文关键词映射
-  const keywordMap: Record<string, string> = {
-    登录: "login",
-    注册: "register",
-    用户: "user",
-    认证: "auth",
-    支付: "payment",
-    订单: "order",
-    搜索: "search",
-    上传: "upload",
-    下载: "download",
-    通知: "notify",
-    评论: "comment",
-    消息: "message",
-    设置: "settings",
-    管理: "admin",
-    仪表盘: "dashboard",
-    分析: "analytics",
-    报告: "report",
-    导出: "export",
-    导入: "import",
-    同步: "sync",
-    缓存: "cache",
-    队列: "queue",
-    邮件: "email",
-    短信: "sms",
-    文件: "file",
-    图片: "image",
-    视频: "video",
-    API: "api",
-    Webhook: "webhook",
-    OAuth: "oauth",
-    JWT: "jwt",
-  };
+  // 过滤常见无意义词
+  const skip = new Set(["a", "an", "the", "to", "for", "of", "in", "on", "at",
+    "with", "by", "is", "are", "be", "it", "as", "or", "and", "not", "but",
+    "this", "that", "will", "can", "need", "should", "must", "make", "want"]);
+  const meaningful = words.filter((w) => !skip.has(w));
 
-  const mapped = words.map((w) => keywordMap[w] ?? w.toLowerCase());
-  // 去重
-  const unique = [...new Set(mapped)];
-  return unique.slice(0, 5).join("-") || "feature";
+  // 去重，取前 3 个
+  const unique = [...new Set(meaningful)];
+  return unique.slice(0, 3).join("-") || Date.now().toString(36);
 }
 
-/**
- * 确保 .pi/craft/plans/{date}-{topic} 目录存在
- */
 export function ensurePlansDir(cwd: string, date: string, topicSlug: string): string {
   const dir = path.join(cwd, ".pi", "craft", "plans", `${date}-${topicSlug}`);
   if (!fs.existsSync(dir)) {
