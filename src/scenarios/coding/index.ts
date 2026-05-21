@@ -19,6 +19,7 @@ import type { WorkflowStage } from "../../core/workflow-engine";
 
 let codingInputMode = false;
 let pendingRequirement: string | null = null;
+let pendingStage: WorkflowStage | null = null;
 let agentsLoaded = false;
 
 // ─── Stage Labels ──────────────────────────────────────────────
@@ -198,9 +199,11 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ─── /coding:develop Command ─────────────────────────
+  const VALID_STAGES = ["code_analysis", "requirement", "design", "testing", "implementation"];
+
   pi.registerCommand("coding:develop", {
-    description: "Enter coding workflow mode - type your requirement and slug is auto-generated",
-    handler: async (_args, ctx) => {
+    description: "Enter coding workflow mode. Optionally start from a specific stage: design, testing, implementation",
+    handler: async (args, ctx) => {
       const s = shared();
       if (!s) {
         ctx.ui.notify("⚠️ Core extension not yet initialized. Try /reload or restart.", "error");
@@ -208,10 +211,22 @@ export default async function (pi: ExtensionAPI) {
       }
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
+
+      const stageArg = args?.trim().toLowerCase();
+      if (stageArg && !VALID_STAGES.includes(stageArg)) {
+        ctx.ui.notify(`Invalid stage: ${stageArg}. Valid: ${VALID_STAGES.join(", ")}`, "warning");
+        return;
+      }
+
+      pendingStage = (stageArg as WorkflowStage) || null;
       codingInputMode = true;
       s.statusline.updateWorkflow("coding", "idle");
+
+      const hint = pendingStage
+        ? `\n\n⚡ Will jump directly to **${pendingStage}** after slug generation.`
+        : "";
       ctx.ui.notify(
-        "🔧 Coding workflow mode activated.\n\nPlease describe your requirement below. A topic-slug will be auto-generated.",
+        `🔧 Coding workflow mode activated.${hint}\n\nPlease describe your requirement below. A topic-slug will be auto-generated.`,
         "info",
       );
     },
@@ -229,6 +244,7 @@ export default async function (pi: ExtensionAPI) {
     if (text.startsWith("/")) {
       codingInputMode = false;
       pendingRequirement = null;
+      pendingStage = null;
       s.statusline.updateWorkflow("", "idle");
       ctx.ui.notify("Exited coding workflow mode.", "info");
       return { action: "continue" };
@@ -261,7 +277,9 @@ export default async function (pi: ExtensionAPI) {
     ensureAgentsLoaded();
 
     const requirement = pendingRequirement;
+    const targetStage = pendingStage ?? "code_analysis";
     pendingRequirement = null;
+    pendingStage = null;
 
     let slugText = "";
     for (const msg of [...event.messages].reverse()) {
@@ -283,12 +301,12 @@ export default async function (pi: ExtensionAPI) {
       || generateTopicSlug(requirement);
 
     ctx.ui.notify(
-      `✅ Slug generated: ${topicSlug}\n📝 Starting coding workflow...`,
+      `✅ Slug generated: ${topicSlug}\n📝 Starting coding workflow at **${targetStage}**...`,
       "info",
     );
 
     const engine = WorkflowEngine.create("coding", requirement, topicSlug, ctx.cwd);
-    engine.transition("code_analysis");
+    engine.transition(targetStage as WorkflowStage);
     setEngine(engine);
     s.statusline.updateWorkflow("coding", "code_analysis");
     pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
@@ -298,8 +316,10 @@ export default async function (pi: ExtensionAPI) {
   });
 
   // ─── /coding:review Command ───────────────────────────
+  const REVIEW_STAGES = ["scope", "analyze", "report"];
+
   pi.registerCommand("coding:review", {
-    description: "Start code review workflow",
+    description: "Start code review workflow. Optionally jump to analyze or report stage.",
     handler: async (args, ctx) => {
       const s = shared();
       if (!s) {
@@ -309,15 +329,27 @@ export default async function (pi: ExtensionAPI) {
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
 
-      const target = args?.trim() || "current git diff (uncommitted changes)";
-      const engine = WorkflowEngine.create("coding", `review: ${target}`, undefined, ctx.cwd);
-      engine.transition("scope");
+      const parts = (args || "").trim().split(/\s+/);
+      let target = "";
+      let stageArg = "scope";
+
+      // Last word might be a stage name
+      if (parts.length > 0 && REVIEW_STAGES.includes(parts[parts.length - 1])) {
+        stageArg = parts.pop()!;
+        target = parts.join(" ");
+      } else {
+        target = parts.join(" ");
+      }
+
+      const scopeTarget = target || "current git diff (uncommitted changes)";
+      const engine = WorkflowEngine.create("coding", `review: ${scopeTarget}`, undefined, ctx.cwd);
+      engine.transition(stageArg as WorkflowStage);
       setEngine(engine);
-      s.statusline.updateWorkflow("coding", "scope");
+      s.statusline.updateWorkflow("coding", stageArg as WorkflowStage);
       pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
 
       await registerScenarioHandlers(ctx);
-      await startWorkflow(ctx, target);
+      await startWorkflow(ctx, scopeTarget);
     },
   });
 

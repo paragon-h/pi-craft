@@ -26,7 +26,10 @@ export type WorkflowStage =
   | "design"
   | "testing"
   | "implementation"
-  | "completed";
+  | "completed"
+  | "scope"
+  | "analyze"
+  | "report";
 
 export interface QAPair {
   question: string;
