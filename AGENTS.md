@@ -77,6 +77,7 @@ src/
 |---------|-------------|
 | `/coding:develop` | Interactive requirement input with auto slug generation |
 | `/coding:review [target]` | Code review workflow |
+| `/coding:status\|resume\|rollback\|abort` | Workflow management |
 | Stage prompts | `before_agent_start` injects stage-specific system prompts |
 | Stage transitions | `agent_end` detects `[STAGE_COMPLETE]` |
 | Read-only enforcement | Blocks write/edit in analysis/design phases |
@@ -90,6 +91,10 @@ Core initializes managers and calls `initState()`. Scenarios read via `getState(
 - `/tokens` — Token usage dashboard (Core)
 - `/coding:develop` — Enter coding develop workflow (interactive, auto slug)
 - `/coding:review [target]` — Start code review workflow
+- `/coding:status` — Show current workflow status
+- `/coding:resume` — Resume an interrupted workflow
+- `/coding:rollback` — Rollback to previous stage
+- `/coding:abort` — Abort current workflow
 - `/travel` — Travel scenario (placeholder)
 - `/stock` — Stock analysis scenario (placeholder)
 - `/knowledge` — Knowledge management scenario (placeholder)

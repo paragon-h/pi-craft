@@ -320,4 +320,105 @@ export default async function (pi: ExtensionAPI) {
       await startWorkflow(ctx, target);
     },
   });
+
+  // ─── /coding:status ──────────────────────────────────
+  pi.registerCommand("coding:status", {
+    description: "Show current coding workflow status",
+    handler: async (_args, ctx) => {
+      const s = shared();
+      if (!s) return;
+      s.statusline.bind(ctx);
+
+      const engine = engineRef();
+      if (!engine || !engine.isActive()) {
+        ctx.ui.notify("No active workflow. Use /coding:develop to start.", "info");
+      } else {
+        const ctx2 = engine.getContext();
+        const docs = engine.getDocumentPathForStage(engine.getStage());
+        ctx.ui.notify(
+          `Workflow: ${engine.getType()}/${engine.getStage()}\nTopic: ${ctx2.topicSlug}\nDocs: ${ctx2.plansDir}\nCurrent: ${docs ?? "N/A"}`,
+          "info",
+        );
+      }
+    },
+  });
+
+  // ─── /coding:resume ──────────────────────────────────
+  pi.registerCommand("coding:resume", {
+    description: "Resume an existing coding workflow",
+    handler: async (_args, ctx) => {
+      const s = shared();
+      if (!s) return;
+      s.statusline.bind(ctx);
+      ensureAgentsLoaded();
+
+      const engine = WorkflowEngine.restore(ctx);
+      if (!engine || !engine.isActive()) {
+        ctx.ui.notify("No active workflow to resume.", "info");
+        return;
+      }
+      if (engine.getType() !== "coding") {
+        ctx.ui.notify("Resume only supports coding workflows.", "warning");
+        return;
+      }
+
+      setEngine(engine);
+      s.statusline.updateWorkflow(engine.getType(), engine.getStage() as WorkflowStage);
+      await registerScenarioHandlers(ctx);
+
+      const stageName = STAGE_LABELS[engine.getStage()] ?? engine.getStage();
+      ctx.ui.notify(`Resumed: coding/${stageName}`, "info");
+      setTimeout(() => pi.sendUserMessage(
+        `Workflow resumed. You are in the **${stageName}** phase. Continue from where you left off.`,
+      ), 0);
+    },
+  });
+
+  // ─── /coding:rollback ────────────────────────────────
+  pi.registerCommand("coding:rollback", {
+    description: "Rollback to previous workflow stage",
+    handler: async (_args, ctx) => {
+      const s = shared();
+      if (!s) return;
+      s.statusline.bind(ctx);
+
+      const engine = engineRef();
+      if (!engine || !engine.isActive()) {
+        ctx.ui.notify("No active workflow to rollback.", "info");
+        return;
+      }
+      const prev = engine.rollback();
+      if (prev) {
+        ctx.ui.notify(`Rolled back to: ${prev}`, "info");
+        s.statusline.updateWorkflow(engine.getType(), prev as WorkflowStage);
+        pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+      } else {
+        ctx.ui.notify("Cannot rollback from current stage.", "warning");
+      }
+    },
+  });
+
+  // ─── /coding:abort ───────────────────────────────────
+  pi.registerCommand("coding:abort", {
+    description: "Abort the current coding workflow",
+    handler: async (_args, ctx) => {
+      const s = shared();
+      if (!s) return;
+      s.statusline.bind(ctx);
+
+      const engine = engineRef();
+      if (!engine) {
+        ctx.ui.notify("No active workflow to abort.", "info");
+        return;
+      }
+      const ok = await ctx.ui.confirm("Abort workflow?", "All generated documents will be preserved.");
+      if (ok) {
+        engine.abort();
+        pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+        setEngine(null);
+        s.statusline.updateWorkflow("", "idle");
+        ctx.ui.notify("Workflow aborted. Documents preserved in .pi/craft/plans/", "info");
+      }
+    },
+  });
 }
