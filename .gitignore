@@ -1,0 +1,7 @@
+# Pi runtime data (not tracked)
+.pi/agent/
+.pi/settings.json
+.pi/craft/
+
+# Dependencies
+node_modules/
