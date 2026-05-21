@@ -226,7 +226,7 @@ export default async function (pi: ExtensionAPI) {
         ? `\n\n⚡ Will jump directly to **${pendingStage}** after slug generation.`
         : "";
       ctx.ui.notify(
-        `🔧 Coding workflow mode activated.${hint}\n\nPlease describe your requirement below. A topic-slug will be auto-generated.`,
+        `🔧 Coding workflow mode activated.${hint}\n\nPlease describe your requirement below. A topic-slug will be auto-generated.\n\nType any /command to exit, or /coding:abort to stop a running workflow.`,
         "info",
       );
     },
