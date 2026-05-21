@@ -18,7 +18,6 @@ const STATUS_KEYS = {
   workflow: "craft-workflow",
   tokens: "craft-tokens",
   subagent: "craft-subagent",
-  scenario: "craft-scenario",
   parallel: "craft-parallel",
   guard: "craft-guard",
 } as const;
@@ -144,12 +143,12 @@ export class StatuslineManager {
     }
   }
 
-  // ─── 场景标识 ────────────────────────────────────────────
+  // ─── 场景标识（每个场景独立的 key，不互相覆盖）──────
 
   updateScenario(name: string): void {
     if (!this.ctx?.hasUI) return;
     const t = this.theme();
-    this.ctx.ui.setStatus(STATUS_KEYS.scenario, t.fg("dim", `[${name}]`));
+    this.ctx.ui.setStatus(`craft-scenario-${name}`, t.fg("dim", `[${name}]`));
   }
 
   // ─── 清除所有 ────────────────────────────────────────────
