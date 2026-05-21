@@ -58,16 +58,7 @@ export function checkCwdGuard(
   if (toolName === "bash") {
     const command = (input.command as string) || "";
 
-    // 提取命令中所有绝对路径（/xxx 或 ~/xxx）
-    const pathPattern = /(?:\s|^)([~\/]\S+)/g;
-    let match: RegExpExecArray | null;
-    const paths: string[] = [];
-    while ((match = pathPattern.exec(command)) !== null) {
-      paths.push(match[1]);
-    }
-
-    // 检查每个路径是否在工作目录外
-    // 只报警写入类命令的参数（mkdir/touch/rm/cp/mv 等），读命令（ls/cat/grep）忽略
+    // 只检查写入类命令（mkdir/touch/rm/cp/mv 等），读命令（ls/cat/grep）忽略
     const writeCommands = /\b(mkdir|touch|rm\s|rmdir|cp\s|mv\s|ln\s|chmod|chown|npm\s+init|git\s+init|git\s+clone|go\s+mod\s+init)\b/;
     const isWriteCmd = writeCommands.test(command);
 
@@ -91,11 +82,19 @@ export function checkCwdGuard(
       }
     }
 
-    // 写入类命令的参数路径检查
-    if (isWriteCmd && paths.length > 0) {
-      for (const p of paths) {
-        if (!isInsideCwd(p)) {
-          return `bash 命令目标在工作目录外:\n命令: ${command.slice(0, 80)}\n工作目录: ${cwd}`;
+    // 写入类命令：解析所有参数路径（包括相对路径），检查是否在工作目录内
+    if (isWriteCmd) {
+      // 分割命令为 token，跳过命令名和 flag（-x / --xxx）
+      const tokens = command.split(/\s+/).filter(Boolean);
+      for (let i = 1; i < tokens.length; i++) {
+        const token = tokens[i];
+        // 跳过 flag、重定向符、赋值
+        if (token.startsWith("-") || token === ">" || token === ">>" || token.includes("=")) continue;
+        // 跳过前一个 token 是重定向符的情况
+        if (i > 0 && (tokens[i - 1] === ">" || tokens[i - 1] === ">>")) continue;
+        // 解析并检查
+        if (!isInsideCwd(token)) {
+          return `bash 命令目标在工作目录外:\n命令: ${command.slice(0, 80)}\n参数: ${token} → ${resolvePath(token)}\n工作目录: ${cwd}`;
         }
       }
     }
