@@ -4,10 +4,6 @@
  * Self-contained extension for the coding workflow scenario.
  * Must be loaded alongside the Core extension (which provides
  * TokenTracker, SubagentManager, StatuslineManager via registry).
- *
- * Workflow stages:
- *   Develop: code_analysis → requirement → design → testing → implementation
- *   Review:  scope → analyze → report
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -15,7 +11,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getState } from "../../core/registry";
+import { getState, type CraftState } from "../../core/registry";
 import { WorkflowEngine, generateTopicSlug } from "../../core/workflow-engine";
 import type { WorkflowStage } from "../../core/workflow-engine";
 
@@ -38,25 +34,25 @@ const STAGE_LABELS: Record<string, string> = {
   report: "review report",
 };
 
-// ─── Helpers ───────────────────────────────────────────────────
+// ─── State Access ──────────────────────────────────────────────
 
-/** Get current shared state. Returns null if core hasn't initialized. */
-function state() {
-  return getState();
+/**
+ * Get shared state from Core extension.
+ * Returns null if Core hasn't initialized yet (parallel loading edge case).
+ */
+function shared(): CraftState | null {
+  const s = getState();
+  return s?.statusline ? s : null;
 }
 
+/** Engine ref from shared state */
 function engineRef(): WorkflowEngine | null {
-  return state().engine;
+  return shared()?.engine ?? null;
 }
 
 function setEngine(e: WorkflowEngine | null): void {
-  state().engine = e;
-}
-
-/** Guard: bail if core hasn't initialized the shared state yet */
-function guard() {
-  const s = state();
-  return s?.statusline ? s : null;
+  const s = shared();
+  if (s) s.engine = e;
 }
 
 // ─── Extension Entry ───────────────────────────────────────────
@@ -67,8 +63,8 @@ export default async function (pi: ExtensionAPI) {
   // ─── Helper: Load built-in agents (lazy, once) ────────
   function ensureAgentsLoaded(): void {
     if (agentsLoaded) return;
-    const s = state();
-    if (!s.subagentEnabled) return;
+    const s = shared();
+    if (!s?.subagentEnabled) return;
     const builtinAgentsDir = path.join(__dirname, "agents");
     if (fs.existsSync(builtinAgentsDir)) {
       s.subagent.loadBuiltinAgents(builtinAgentsDir);
@@ -81,7 +77,7 @@ export default async function (pi: ExtensionAPI) {
     const engine = engineRef();
     if (!engine || !engine.isActive() || engine.getType() !== "coding") return;
 
-    const s = state();
+    const s = shared()!;
     const dc = {
       pi, ctx, engine,
       subagent: s.subagent,
@@ -91,7 +87,6 @@ export default async function (pi: ExtensionAPI) {
     };
 
     const stage = engine.getStage();
-
     if (["code_analysis", "requirement", "design", "testing", "implementation"].includes(stage)) {
       const { register: registerDevelop } = await import("./develop/index");
       registerDevelop(dc);
@@ -107,7 +102,7 @@ export default async function (pi: ExtensionAPI) {
     const engine = engineRef();
     if (!engine) return;
 
-    const s = state();
+    const s = shared()!;
     const dc = {
       pi, ctx, engine,
       subagent: s.subagent,
@@ -117,7 +112,6 @@ export default async function (pi: ExtensionAPI) {
     };
 
     const stage = engine.getStage();
-
     if (["code_analysis", "requirement", "design", "testing", "implementation"].includes(stage)) {
       const { start: startDevelop } = await import("./develop/index");
       startDevelop(dc, requirement);
@@ -130,8 +124,9 @@ export default async function (pi: ExtensionAPI) {
 
   // ─── Session Start — Restore workflow ─────────────────
   pi.on("session_start", async (_event, ctx) => {
-    const s = guard();
+    const s = shared();
     if (!s) return;
+
     s.statusline.bind(ctx);
     s.statusline.updateScenario("coding");
     ensureAgentsLoaded();
@@ -154,7 +149,9 @@ export default async function (pi: ExtensionAPI) {
 
   // ─── Stage-Specific Tool Restrictions ─────────────────
   pi.on("tool_call", async (event, ctx) => {
-    const engine = engineRef();
+    const s = shared();
+    if (!s) return;
+    const engine = s.engine;
     if (!engine || !engine.isActive() || engine.getType() !== "coding") return;
 
     const stage = engine.getStage();
@@ -162,10 +159,8 @@ export default async function (pi: ExtensionAPI) {
       "code_analysis", "requirement", "design", "testing",
       "scope", "analyze", "report",
     ];
-
     if (!readOnlyStages.includes(stage)) return;
 
-    // write: only allow .pi/craft/plans/
     if (event.toolName === "write") {
       const filePath = (event.input.path as string) || "";
       if (!filePath.includes(".pi/craft/plans/")) {
@@ -177,7 +172,6 @@ export default async function (pi: ExtensionAPI) {
       return;
     }
 
-    // edit: only allow .pi/craft/plans/
     if (event.toolName === "edit") {
       const filePath = (event.input.file_path || event.input.path || "") as string;
       if (!filePath.includes(".pi/craft/plans/")) {
@@ -189,13 +183,11 @@ export default async function (pi: ExtensionAPI) {
       return;
     }
 
-    // bash: block write ops unless targeting plans dir
     if (event.toolName === "bash") {
       const command = (event.input.command as string) || "";
       const writesToPlans = command.includes(".pi/craft/plans/");
       const writeOps = [">", " >>", "tee ", "dd ", "mkfifo"];
       const hasWriteOp = writeOps.some((op) => command.includes(op));
-
       if (hasWriteOp && !writesToPlans) {
         return {
           block: true,
@@ -209,7 +201,11 @@ export default async function (pi: ExtensionAPI) {
   pi.registerCommand("craft:coding", {
     description: "Enter coding workflow mode - type your requirement and slug is auto-generated",
     handler: async (_args, ctx) => {
-      const s = state();
+      const s = shared();
+      if (!s) {
+        ctx.ui.notify("⚠️ Core extension not yet initialized. Try /reload or restart.", "error");
+        return;
+      }
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
       codingInputMode = true;
@@ -224,13 +220,12 @@ export default async function (pi: ExtensionAPI) {
   // ─── Input Event — Capture requirement in coding mode ──
   pi.on("input", async (event, ctx) => {
     if (!codingInputMode) return { action: "continue" };
-    const s = guard();
+
+    const s = shared();
     if (!s) return { action: "continue" };
     s.statusline.bind(ctx);
 
     const text = event.text.trim();
-
-    // Slash command exits coding mode
     if (text.startsWith("/")) {
       codingInputMode = false;
       pendingRequirement = null;
@@ -238,14 +233,11 @@ export default async function (pi: ExtensionAPI) {
       ctx.ui.notify("Exited coding workflow mode.", "info");
       return { action: "continue" };
     }
-
-    // Empty input, stay in mode
     if (!text) {
       ctx.ui.notify("Please enter your requirement description.", "warning");
       return { action: "handled" };
     }
 
-    // Capture requirement, exit input mode
     pendingRequirement = text;
     codingInputMode = false;
 
@@ -255,7 +247,6 @@ export default async function (pi: ExtensionAPI) {
     );
 
     const slugPrompt = `Generate a concise English topic-slug (2-3 words, lowercase, hyphenated) for this development requirement. Use common tech abbreviations (e.g., auth, impl, mw, db, ws, k8s, i18n). Reply with ONLY the slug on a single line, nothing else.\n\nRequirement: ${text}`;
-
     setTimeout(() => pi.sendUserMessage(slugPrompt), 0);
     return { action: "handled" };
   });
@@ -263,7 +254,8 @@ export default async function (pi: ExtensionAPI) {
   // ─── Agent End — Capture slug from LLM response ───────
   pi.on("agent_end", async (event, ctx) => {
     if (!pendingRequirement) return;
-    const s = guard();
+
+    const s = shared();
     if (!s) return;
     s.statusline.bind(ctx);
     ensureAgentsLoaded();
@@ -271,7 +263,6 @@ export default async function (pi: ExtensionAPI) {
     const requirement = pendingRequirement;
     pendingRequirement = null;
 
-    // Extract slug from last assistant message
     let slugText = "";
     for (const msg of [...event.messages].reverse()) {
       if (msg.role === "assistant") {
@@ -296,7 +287,6 @@ export default async function (pi: ExtensionAPI) {
       "info",
     );
 
-    // Create and persist workflow
     const engine = WorkflowEngine.create("coding", requirement, topicSlug, ctx.cwd);
     engine.transition("code_analysis");
     setEngine(engine);
@@ -318,7 +308,11 @@ export default async function (pi: ExtensionAPI) {
         : null;
     },
     handler: async (args, ctx) => {
-      const s = state();
+      const s = shared();
+      if (!s) {
+        ctx.ui.notify("⚠️ Core extension not yet initialized. Try /reload or restart.", "error");
+        return;
+      }
       s.statusline.bind(ctx);
       ensureAgentsLoaded();
 
