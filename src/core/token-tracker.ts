@@ -327,41 +327,6 @@ export class TokenTracker {
   }
 }
 
-// ─── Cost Estimation ─────────────────────────────────────────
-
-/** Known pricing per 1M tokens. Used when API doesn't return cost. */
-const PROVIDER_PRICING: Record<string, { input: number; cacheRead: number; output: number }> = {
-  deepseek: { input: 0.27, cacheRead: 0.07, output: 1.10 },
-  anthropic: { input: 3.00, cacheRead: 0.30, output: 15.00 },
-  openai: { input: 2.50, cacheRead: 1.25, output: 10.00 },
-  google: { input: 1.25, cacheRead: 0.31, output: 5.00 },
-};
-
-export function estimateCost(model: string | undefined, usage: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }): number | undefined {
-  if (!model) return undefined;
-
-  const modelLower = model.toLowerCase();
-  const provider = modelLower.split("/")[0];
-
-  // Match by provider first, then by model name substring
-  let pricing = PROVIDER_PRICING[provider];
-  if (!pricing) {
-    for (const [key, p] of Object.entries(PROVIDER_PRICING)) {
-      if (modelLower.includes(key)) { pricing = p; break; }
-    }
-  }
-  if (!pricing) return undefined;
-
-  const input = usage.input ?? 0;
-  const output = usage.output ?? 0;
-  const cacheRead = usage.cacheRead ?? 0;
-  const nonCacheInput = Math.max(0, input - cacheRead);
-
-  return (nonCacheInput / 1_000_000) * pricing.input
-       + (cacheRead / 1_000_000) * pricing.cacheRead
-       + (output / 1_000_000) * pricing.output;
-}
-
 // ─── 扩展注册辅助 ────────────────────────────────────────────
 
 /**
@@ -383,7 +348,7 @@ export function setupTokenTracking(pi: ExtensionAPI, tracker: TokenTracker): voi
         output: usage.output,
         cacheRead: usage.cacheRead,
         cacheWrite: usage.cacheWrite,
-        cost: usage.cost?.total ?? estimateCost(msg.model, usage),
+        cost: usage.cost?.total,
         totalTokens: usage.totalTokens,
       },
     );
