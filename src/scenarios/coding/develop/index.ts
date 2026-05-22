@@ -11,7 +11,7 @@ import type { SubagentManager } from "../../../../core/subagent-manager";
 import type { TokenTracker } from "../../../../core/token-tracker";
 import type { StatuslineManager } from "../../../../ui/statusline";
 
-import { updateWidget } from "./flow";
+import { updateWidget, getNextStage, AUTO_TRIGGER } from "./flow";
 import { register as registerCodeAnalysis } from "./stages/code-analysis";
 import { register as registerRequirement } from "./stages/requirement";
 import { register as registerDesign } from "./stages/design";
@@ -29,14 +29,78 @@ export interface DevelopContext {
 }
 
 export function register(dc: DevelopContext): void {
+  const { pi, engine, ctx, statusline } = dc;
+
+  // Register per-stage prompt injection only
   registerCodeAnalysis(dc);
   registerRequirement(dc);
   registerDesign(dc);
   registerTesting(dc);
   registerImplementation(dc);
 
-  // 共享 widget 更新（所有阶段共用）
-  dc.pi.on("turn_end", async () => updateWidget(dc.ctx, dc.engine));
+  // Centralized [STAGE_COMPLETE] detection — runs ONCE per agent_end
+  pi.on("agent_end", async (event, _ctx) => {
+    if (!engine.isActive() || engine.getType() !== "coding") return;
+    const currentStage = engine.getStage();
+
+    // Skip idle/completed
+    if (currentStage === "idle" || currentStage === "completed") return;
+
+    // Implementation stage has its own logic (auto-continue + approval)
+    if (currentStage === "implementation") return;
+
+    // Check for stage complete marker
+    let lastText = "";
+    for (const msg of [...event.messages].reverse()) {
+      if (msg.role === "assistant") {
+        for (const part of msg.content) {
+          if (part.type === "text" && part.text) lastText += part.text;
+        }
+        break;
+      }
+    }
+
+    if (!lastText.includes("[STAGE_COMPLETE]")) return;
+
+    const next = getNextStage(currentStage);
+    if (!next) {
+      // No next stage → workflow complete
+      engine.transition("completed");
+      statusline.updateWorkflow("coding", "completed");
+      pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+      ctx.ui.setWidget("craft-progress", undefined);
+      ctx.ui.notify("🎉 Development workflow completed!", "success");
+      return;
+    }
+
+    // Testing → Implementation needs user confirmation
+    if (currentStage === "testing" && next === "implementation" && ctx.hasUI) {
+      const ok = await ctx.ui.confirm(
+        "Enter Implementation Phase?",
+        "The design and testing plan are ready.\n\nOnce you enter implementation, the AI will freely execute code changes without per-step approval.\n\nReady to proceed?",
+      );
+      if (!ok) {
+        ctx.ui.notify("Implementation deferred. You can continue when ready.", "info");
+        return;
+      }
+    }
+
+    // Transition
+    engine.transition(next);
+    statusline.updateWorkflow("coding", next);
+    pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+    updateWidget(ctx, engine);
+    ctx.ui.notify(`→ ${next}`, "info");
+
+    // Auto-trigger next stage
+    const trigger = AUTO_TRIGGER[next];
+    if (trigger) {
+      setTimeout(() => pi.sendUserMessage(trigger, { deliverAs: "steer" }), 0);
+    }
+  });
+
+  // Shared widget update
+  pi.on("turn_end", async () => updateWidget(dc.ctx, dc.engine));
 }
 
 export function start(dc: DevelopContext, requirement: string): void {
@@ -45,6 +109,7 @@ export function start(dc: DevelopContext, requirement: string): void {
   if (engine.getStage() === "code_analysis") {
     pi.sendUserMessage(
       `Analyze the project codebase for this requirement:\n\n"${requirement}"\n\nWrite the report using write tool (parameter: "path"). Add [STAGE_COMPLETE] when done.`,
+      { deliverAs: "steer" },
     );
   }
 

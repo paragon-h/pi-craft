@@ -68,6 +68,7 @@ export function register(dc: DevelopContext): void {
     setTimeout(() => {
       pi.sendUserMessage(
         "Update tasks.md and todos.md to mark the completed task, then continue to the next task. Do not stop until all tasks are complete.",
+        { deliverAs: "steer" },
       );
     }, 0);
   });

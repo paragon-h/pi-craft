@@ -3,7 +3,7 @@
  */
 
 import type { DevelopContext } from "../index";
-import { getNextStage, extractLastAssistantText, buildStagePrompt, onTransition } from "../flow";
+import { buildStagePrompt } from "../flow";
 
 export const stage = "design";
 export const label = "Design";
@@ -24,22 +24,10 @@ export const prompt = `[DESIGN PHASE — READ-ONLY · INTERACTIVE]
 5. Add [STAGE_COMPLETE] when the design is approved and written.`;
 
 export function register(dc: DevelopContext): void {
-  const { pi, engine, ctx } = dc;
+  const { pi, engine } = dc;
 
   pi.on("before_agent_start", async (event) => {
     if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
     return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(dc, prompt) };
-  });
-
-  pi.on("agent_end", async (event, _ctx) => {
-    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
-    const lastText = extractLastAssistantText(event.messages);
-    if (!lastText.includes("[STAGE_COMPLETE]")) return;
-
-    const next = getNextStage(stage);
-    if (next) {
-      onTransition(dc, next, pi);
-      ctx.ui.notify(`${label} → ${next}`, "info");
-    }
   });
 }

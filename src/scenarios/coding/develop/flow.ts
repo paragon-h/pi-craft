@@ -77,7 +77,7 @@ export function onTransition(
 
   const trigger = AUTO_TRIGGER[next];
   if (trigger) {
-    setTimeout(() => pi.sendUserMessage(trigger), 0);
+    setTimeout(() => pi.sendUserMessage(trigger, { deliverAs: "steer" }), 0);
   }
 }
 

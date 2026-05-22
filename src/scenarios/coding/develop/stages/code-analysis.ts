@@ -5,7 +5,7 @@
  */
 
 import type { DevelopContext } from "../index";
-import { getNextStage, extractLastAssistantText, buildStagePrompt, onTransition, updateWidget } from "../flow";
+import { buildStagePrompt } from "../flow";
 
 export const stage = "code_analysis";
 export const label = "Code Analysis";
@@ -48,17 +48,5 @@ export function register(dc: DevelopContext): void {
     if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
     ctx.ui.setWidget("craft-stage-hint", undefined);
     return { systemPrompt: (event.systemPrompt ?? "") + "\n\n" + buildStagePrompt(dc, prompt) };
-  });
-
-  pi.on("agent_end", async (event, _ctx) => {
-    if (!engine.isActive() || engine.getType() !== "coding" || engine.getStage() !== stage) return;
-    const lastText = extractLastAssistantText(event.messages);
-    if (!lastText.includes("[STAGE_COMPLETE]")) return;
-
-    const next = getNextStage(stage);
-    if (next) {
-      onTransition(dc, next, pi);
-      ctx.ui.notify(`${label} → ${next}`, "info");
-    }
   });
 }
