@@ -84,8 +84,9 @@ export class TokenTracker {
   private stats: TokenStats;
   private turnIndex = 0;
   private subagentTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
-  // per-subagent 明细
   private subagentDetails: Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }> = new Map();
+  /** model ID → actual provider name (from model_select event) */
+  private modelProviders = new Map<string, string>();
   private static CUSTOM_TYPE = "craft-token-stats";
 
   constructor() {
@@ -279,6 +280,17 @@ export class TokenTracker {
 
   // ─── 持久化 ──────────────────────────────────────────
 
+  /** Record model → provider mapping from model_select event */
+  setModelProvider(modelId: string, provider: string): void {
+    this.modelProviders.set(modelId, provider);
+  }
+
+  /** Get provider for a model, falling back to string parsing */
+  getProvider(modelId: string | undefined): string | undefined {
+    if (!modelId) return undefined;
+    return this.modelProviders.get(modelId) ?? modelId.split("/")[0];
+  }
+
   toPersistenceData(): {
     byModel: Array<[string, ModelStats]>;
     byProvider: Array<[string, ProviderStats]>;
@@ -342,7 +354,7 @@ export function setupTokenTracking(pi: ExtensionAPI, tracker: TokenTracker): voi
 
     tracker.recordUsage(
       msg.model,
-      msg.model?.split("/")[0], // provider from model string
+      tracker.getProvider(msg.model), // real provider from model_select, fallback to string parse
       {
         input: usage.input,
         output: usage.output,

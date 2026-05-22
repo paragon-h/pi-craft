@@ -128,6 +128,7 @@ export default function (pi: ExtensionAPI) {
   // ─── Model Change Sync ───────────────────────────────
   pi.on("model_select", async (event) => {
     subagent.setParentModel(event.model.id, event.model.provider);
+    tracker.setModelProvider(event.model.id, event.model.provider);
   });
 
   // ─── Tool Interception ───────────────────────────────
