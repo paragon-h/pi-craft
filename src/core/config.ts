@@ -1,0 +1,74 @@
+/**
+ * Pi Craft — Shared Config Reader
+ *
+ * Reads `craft` config from pi.craftConfig or settings.json.
+ * Cached on first read via globalThis so all extensions share one instance.
+ */
+
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+const GLOBAL_KEY = "__pi_craft_config__";
+
+export interface CraftConfig {
+  // Core
+  enableSubagent?: boolean;
+  enableParallelSubagent?: boolean;
+  enableCwdGuard?: boolean;
+
+  // Capabilities (all default-on unless noted)
+  enableLsp?: boolean;
+  enableTodo?: boolean;
+  enableWebFetch?: boolean;
+  enableMcp?: boolean;
+  enableDamageControl?: boolean;
+  enableAgentTeam?: boolean;
+}
+
+/** Read and cache config. Call from any extension. */
+export function getCraftConfig(pi?: { craftConfig?: CraftConfig }): CraftConfig {
+  const cached = (globalThis as Record<string, unknown>)[GLOBAL_KEY] as CraftConfig | undefined;
+  if (cached) return cached;
+
+  let config: CraftConfig = {};
+
+  // 1. pi may inject config at startup
+  if (pi?.craftConfig) {
+    config = { ...pi.craftConfig };
+  }
+
+  // 2. Fallback: read from settings.json (project first, then global)
+  if (Object.keys(config).length === 0) {
+    const projectSettings = path.join(process.cwd(), ".pi", "settings.json");
+    const globalSettings = path.join(
+      process.env.HOME ?? process.env.USERPROFILE ?? "/tmp",
+      ".pi", "agent", "settings.json",
+    );
+    for (const sp of [projectSettings, globalSettings]) {
+      try {
+        if (fs.existsSync(sp)) {
+          const parsed = JSON.parse(fs.readFileSync(sp, "utf-8"));
+          if (parsed.craft) {
+            config = parsed.craft;
+            if (Object.keys(config).length > 0) break;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  (globalThis as Record<string, unknown>)[GLOBAL_KEY] = config;
+  return config;
+}
+
+// ─── Bool Helpers ──────────────────────────────────────────────
+
+/** Default-on: false only when explicitly set to false */
+export function isOn(config: CraftConfig, key: keyof CraftConfig): boolean {
+  return config[key] !== false;
+}
+
+/** Default-off: true only when explicitly set to true */
+export function isEnabled(config: CraftConfig, key: keyof CraftConfig): boolean {
+  return config[key] === true;
+}

@@ -22,6 +22,7 @@ import { TokenTracker, setupTokenTracking } from "./core/token-tracker";
 import { checkCwdGuard } from "./core/cwd-guard";
 import { StatuslineManager } from "./ui/statusline";
 import { initState, getState } from "./core/registry";
+import { getCraftConfig, isOn, isEnabled } from "./core/config";
 
 // ─── Main Entry ────────────────────────────────────────────────
 
@@ -32,33 +33,10 @@ export default function (pi: ExtensionAPI) {
   const statusline = new StatuslineManager();
 
   // ─── Read Config ──────────────────────────────────────
-  let craftConfig = (pi as Record<string, unknown>).craftConfig as
-    | { enableSubagent?: boolean; enableParallelSubagent?: boolean; enableCwdGuard?: boolean }
-    | undefined;
-
-  // fallback: pi may not inject craftConfig, read from settings.json
-  if (!craftConfig) {
-    const projectSettings = path.join(process.cwd(), ".pi", "settings.json");
-    const globalSettings = path.join(
-      process.env.HOME ?? process.env.USERPROFILE ?? "/tmp",
-      ".pi", "agent", "settings.json",
-    );
-    for (const sp of [projectSettings, globalSettings]) {
-      try {
-        if (fs.existsSync(sp)) {
-          const parsed = JSON.parse(fs.readFileSync(sp, "utf-8"));
-          if (parsed.craft) {
-            craftConfig = parsed.craft;
-            break;
-          }
-        }
-      } catch { /* ignore */ }
-    }
-  }
-
-  const subagentEnabled = craftConfig?.enableSubagent !== false;
-  const parallelEnabled = craftConfig?.enableParallelSubagent === true;
-  const cwdGuardEnabled = craftConfig?.enableCwdGuard !== false;
+  const config = getCraftConfig(pi as { craftConfig?: Record<string, unknown> });
+  const subagentEnabled = isOn(config, "enableSubagent");
+  const parallelEnabled = isEnabled(config, "enableParallelSubagent");
+  const cwdGuardEnabled = isOn(config, "enableCwdGuard");
 
   // ─── Share State With Scenarios ───────────────────────
   initState({
