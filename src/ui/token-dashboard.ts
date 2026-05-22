@@ -138,22 +138,40 @@ export function createTokenDashboard(
 
   // By Model (with cache columns)
   if (modelStats.length > 0) {
-    container.addChild(new Text(theme.fg("accent", theme.bold("║ By Model                         ↑Input    ↓Output   ⊕Cache    Cost")), 0, 0));
+    const colModel = 30;
+    const colInput = 7;
+    const colOutput = 7;
+    const colBar = 10;
+    const colCache = 10;
+    const colCost = 8;
+
+    // Header — same widths as data
+    const headerModel = "Model".padEnd(colModel);
+    const headerInput = "↑Input".padEnd(colInput);
+    const headerOutput = "↓Output".padEnd(colOutput);
+    const headerBar = "".padEnd(colBar);
+    const headerCache = "⊕Cache".padEnd(colCache);
+    const headerCost = "Cost".padEnd(colCost);
+    container.addChild(new Text(
+      theme.fg("accent", theme.bold(`║ ${headerModel} ${headerInput} ${headerOutput} ${headerBar} ${headerCache} ${headerCost}`)),
+      0, 0,
+    ));
+
     for (const { model, stats } of modelStats.slice(0, 6)) {
       const ratio = maxInput > 0 ? stats.input / maxInput : 0;
-      // Show last 28 chars — most informative part of the model path
-      const display = model.length > 30 ? "…" + model.slice(-29) : model.padEnd(30);
-      const pb = bar(ratio, 10, theme);
-      // 每个 model 的缓存命中率
+      const display = model.length > colModel ? "…" + model.slice(-(colModel - 1)) : model.padEnd(colModel);
+      const inputCol = `↑${fmtNum(stats.input, 5)}`.padEnd(colInput);
+      const outputCol = `↓${fmtNum(stats.output, 5)}`.padEnd(colOutput);
+      const barCol = bar(ratio, colBar, theme);
       const modelTotal = stats.input + stats.cacheRead;
       const modelCacheRate = modelTotal > 0 ? (stats.cacheRead / modelTotal * 100).toFixed(0) : "0";
-      const cacheStr = stats.cacheRead > 0 ? `${fmtNum(stats.cacheRead, 4)}(${modelCacheRate}%)` : "    -".padStart(10);
+      const cacheCol = (stats.cacheRead > 0 ? `${fmtNum(stats.cacheRead, 4)}(${modelCacheRate}%)` : "-".padStart(7) + "  ").padEnd(colCache);
+      const costCol = fmtCost(stats.cost).padEnd(colCost);
       const line =
-        theme.fg("dim", `║  ${display}`) +
-        theme.fg("dim", `↑${fmtNum(stats.input, 5)} ↓${fmtNum(stats.output, 5)}`) +
-        ` ${pb} ` +
-        theme.fg("success", cacheStr) +
-        theme.fg("dim", `  ${fmtCost(stats.cost)}`);
+        theme.fg("dim", `║ ${display} ${inputCol} ${outputCol} `) +
+        barCol +
+        theme.fg("success", ` ${cacheCol}`) +
+        theme.fg("dim", ` ${costCol}`);
       container.addChild(new Text(line, 0, 0));
     }
     container.addChild(new Text(theme.fg("dim", "║"), 0, 0));
@@ -161,12 +179,12 @@ export function createTokenDashboard(
 
   // By Provider
   if (providerStats.length > 0) {
-    container.addChild(new Text(theme.fg("accent", theme.bold("║ By Provider")), 0, 0));
+    container.addChild(new Text(theme.fg("accent", theme.bold(`║ ${("Provider").padEnd(20)} ${("Req").padEnd(5)} ${("↑Input").padEnd(7)} ${("↓Output").padEnd(7)}  ${("Cost").padEnd(8)}`)), 0, 0));
     for (const { provider, stats } of providerStats.slice(0, 4)) {
       const pv = provider.length > 20 ? provider.slice(0, 19) + "…" : provider.padEnd(20);
       const line = theme.fg(
         "dim",
-        `║  ${pv} ${String(stats.requests).padStart(3)} req  ↑${fmtNum(stats.input, 5)} ↓${fmtNum(stats.output, 5)}  ${fmtCost(stats.cost)}`,
+        `║ ${pv} ${String(stats.requests).padStart(3)} req ${`↑${fmtNum(stats.input, 5)}`.padEnd(7)} ${`↓${fmtNum(stats.output, 5)}`.padEnd(7)}  ${fmtCost(stats.cost).padEnd(8)}`,
       );
       container.addChild(new Text(line, 0, 0));
     }
@@ -180,15 +198,20 @@ export function createTokenDashboard(
 
   // History (last 10 turns)
   if (history.length > 0) {
-    container.addChild(new Text(theme.fg("accent", theme.bold("║ Recent Turns")), 0, 0));
+    const colModel = 24;
+    const colInput = 5;
+    const colOutput = 5;
+    const colCache = 5;
+    const colCost = 8;
+    container.addChild(new Text(theme.fg("accent", theme.bold(`║ ${("Recent Turns").padEnd(colModel)} ${("↑In").padEnd(colInput)} ${("↓Out").padEnd(colOutput)} ${("⊕Ch").padEnd(colCache)} ${("Cost").padEnd(colCost)}`)), 0, 0));
     for (const snap of history.slice(-10).reverse()) {
-      const display = snap.model.length > 24 ? "…" + snap.model.slice(-23) : snap.model.padEnd(24);
+      const display = snap.model.length > colModel ? "…" + snap.model.slice(-(colModel - 1)) : snap.model.padEnd(colModel);
       const turn = `#${String(snap.turnIndex).padStart(3)}`;
       const hasCache = snap.cacheRead > 0;
-      const cacheStr = hasCache ? ` ⊕${fmtNum(snap.cacheRead, 3)}` : "";
+      const cacheStr = hasCache ? `⊕${fmtNum(snap.cacheRead, 3)}` : "-".padStart(4);
       const line = theme.fg(
         "dim",
-        `║  ${turn} ${display} ↑${fmtNum(snap.input, 4)} ↓${fmtNum(snap.output, 4)}${cacheStr} ${fmtCost(snap.cost)}`,
+        `║ ${turn} ${display} ${`↑${fmtNum(snap.input, 4)}`.padEnd(colInput)} ${`↓${fmtNum(snap.output, 4)}`.padEnd(colOutput)} ${cacheStr.padEnd(colCache)} ${fmtCost(snap.cost).padEnd(colCost)}`,
       );
       container.addChild(new Text(line, 0, 0));
     }
