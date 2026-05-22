@@ -5,8 +5,11 @@
   "keywords": ["pi-package"],
   "type": "module",
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "prompts": ["./prompts"],
+    "extensions": [
+      "./src/index.ts",
+      "./src/capabilities/lsp/index.ts",
+      "./src/scenarios/coding/index.ts"
+    ],
     "video": "",
     "image": "",
     "config": {
