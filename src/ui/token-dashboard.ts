@@ -38,6 +38,7 @@ export function createTokenDashboard(
   theme: DashboardTheme,
   _width: number,
 ) {
+  const w = Math.max(80, _width); // minimum 80 chars
   const allIn = tracker.getTotalAllIn();
   const modelStats = tracker.getModelStats();
   const providerStats = tracker.getProviderStats();
@@ -92,20 +93,29 @@ export function createTokenDashboard(
 
   // ── By Model ──
   if (modelStats.length > 0) {
-    c.addChild(new Text(accent(pad("║ Model", 32) + pad("↑In", 6) + pad("↓Out", 6) + pad("", 12) + pad("⊕Cache", 11) + "Cost"), 0, 0));
+    // Dynamic column widths based on terminal width
+    const colModel = Math.max(22, Math.min(40, w - 70));
+    const colNum = 7;
+    const colBar = 12;
+    const colCache = 11;
+    const colCost = 8;
+
+    c.addChild(new Text(accent(
+      pad("║ Model", colModel + 2) + pad("↑In", colNum) + pad("↓Out", colNum) + pad("", colBar) + pad("⊕Cache", colCache) + "Cost"
+    ), 0, 0));
     for (const { model, stats } of modelStats.slice(0, 6)) {
       const ratio = maxInput > 0 ? stats.input / maxInput : 0;
-      const name = model.length > 29 ? "…" + model.slice(-28) : model;
+      const name = model.length > colModel - 1 ? "…" + model.slice(-(colModel - 2)) : model;
       const bar = "█".repeat(Math.round(ratio * 10)) + "░".repeat(10 - Math.round(ratio * 10));
       const total = stats.input + stats.cacheRead;
       const rate = total > 0 ? `(${Math.round(stats.cacheRead / total * 100)}%)` : "";
-      const cacheCol = stats.cacheRead > 0 ? `${fmtNum(stats.cacheRead).padStart(5)}${rate}` : "-".padStart(11);
+      const cacheCol = stats.cacheRead > 0 ? `${fmtNum(stats.cacheRead)}${rate}` : "-";
       c.addChild(new Text(dim(
-        pad(`║  ${name}`, 32) +
-        pad(`↑${fmtNum(stats.input)}`, 6) +
-        pad(`↓${fmtNum(stats.output)}`, 6) +
-        pad(bar, 12) +
-        pad(cacheCol, 11) +
+        pad(`║  ${name}`, colModel + 2) +
+        pad(`↑${fmtNum(stats.input)}`, colNum) +
+        pad(`↓${fmtNum(stats.output)}`, colNum) +
+        pad(bar, colBar) +
+        pad(cacheCol, colCache) +
         fmtCost(stats.cost)
       ), 0, 0));
     }
@@ -114,15 +124,15 @@ export function createTokenDashboard(
 
   // ── By Provider ──
   if (providerStats.length > 0) {
-    c.addChild(new Text(accent(pad("║ Provider", 22) + pad("Req", 5) + pad("↑In", 6) + pad("↓Out", 6) + pad("", 8) + "Cost"), 0, 0));
+    c.addChild(new Text(accent(pad("║ Provider", colModel + 2) + pad("Req", colNum) + pad("↑In", colNum) + pad("↓Out", colNum) + pad("", colBar + colCache) + "Cost"), 0, 0));
     for (const { provider, stats } of providerStats.slice(0, 4)) {
-      const name = provider.length > 19 ? provider.slice(0, 18) + "…" : provider;
+      const name = provider.length > colModel - 1 ? provider.slice(0, colModel - 2) + "…" : provider;
       c.addChild(new Text(dim(
-        pad(`║  ${name}`, 22) +
-        pad(String(stats.requests), 5) +
-        pad(`↑${fmtNum(stats.input)}`, 6) +
-        pad(`↓${fmtNum(stats.output)}`, 6) +
-        "".padEnd(8) +
+        pad(`║  ${name}`, colModel + 2) +
+        pad(String(stats.requests), colNum) +
+        pad(`↑${fmtNum(stats.input)}`, colNum) +
+        pad(`↓${fmtNum(stats.output)}`, colNum) +
+        "".padEnd(colBar + colCache) +
         fmtCost(stats.cost)
       ), 0, 0));
     }
@@ -131,16 +141,16 @@ export function createTokenDashboard(
 
   // ── Recent Turns ──
   if (history.length > 0) {
-    c.addChild(new Text(accent(pad("║ Turn  Model", 32) + pad("↑In", 6) + pad("↓Out", 6) + pad("⊕Ch", 6) + "Cost"), 0, 0));
+    c.addChild(new Text(accent(pad("║ Turn  Model", colModel + 2) + pad("↑In", colNum) + pad("↓Out", colNum) + pad("⊕Ch", colNum) + "Cost"), 0, 0));
     for (const snap of history.slice(-10).reverse()) {
       const turn = `#${String(snap.turnIndex).padStart(3)}`;
-      const name = snap.model.length > 22 ? "…" + snap.model.slice(-21) : snap.model;
+      const name = snap.model.length > colModel - 1 ? "…" + snap.model.slice(-(colModel - 2)) : snap.model;
       const cacheStr = snap.cacheRead > 0 ? `⊕${fmtNum(snap.cacheRead)}` : "-";
       c.addChild(new Text(dim(
-        pad(`║ ${turn} ${name}`, 32) +
-        pad(`↑${fmtNum(snap.input)}`, 6) +
-        pad(`↓${fmtNum(snap.output)}`, 6) +
-        pad(cacheStr, 6) +
+        pad(`║ ${turn} ${name}`, colModel + 2) +
+        pad(`↑${fmtNum(snap.input)}`, colNum) +
+        pad(`↓${fmtNum(snap.output)}`, colNum) +
+        pad(cacheStr, colNum) +
         fmtCost(snap.cost)
       ), 0, 0));
     }
