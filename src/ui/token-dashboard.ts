@@ -138,17 +138,18 @@ export function createTokenDashboard(
 
   // By Model (with cache columns)
   if (modelStats.length > 0) {
-    container.addChild(new Text(theme.fg("accent", theme.bold("║ By Model               ↑Input    ↓Output   ⊕Cache    Cost")), 0, 0));
+    container.addChild(new Text(theme.fg("accent", theme.bold("║ By Model                     ↑Input    ↓Output   ⊕Cache    Cost")), 0, 0));
     for (const { model, stats } of modelStats.slice(0, 6)) {
       const ratio = maxInput > 0 ? stats.input / maxInput : 0;
-      const modelName = model.length > 16 ? model.slice(0, 15) + "…" : model.padEnd(16);
+      // Show last 28 chars — most informative part of the model path
+      const display = model.length > 28 ? "…" + model.slice(-27) : model.padEnd(28);
       const pb = bar(ratio, 10, theme);
       // 每个 model 的缓存命中率
       const modelTotal = stats.input + stats.cacheRead;
       const modelCacheRate = modelTotal > 0 ? (stats.cacheRead / modelTotal * 100).toFixed(0) : "0";
       const cacheStr = stats.cacheRead > 0 ? `${fmtNum(stats.cacheRead, 4)}(${modelCacheRate}%)` : "    -".padStart(10);
       const line =
-        theme.fg("dim", `║  ${modelName}`) +
+        theme.fg("dim", `║  ${display}`) +
         theme.fg("dim", `↑${fmtNum(stats.input, 5)} ↓${fmtNum(stats.output, 5)}`) +
         ` ${pb} ` +
         theme.fg("success", cacheStr) +
@@ -181,14 +182,13 @@ export function createTokenDashboard(
   if (history.length > 0) {
     container.addChild(new Text(theme.fg("accent", theme.bold("║ Recent Turns")), 0, 0));
     for (const snap of history.slice(-10).reverse()) {
-      const model = snap.model.length > 14 ? snap.model.slice(0, 13) + "…" : snap.model.padEnd(14);
+      const display = snap.model.length > 22 ? "…" + snap.model.slice(-21) : snap.model.padEnd(22);
       const turn = `#${String(snap.turnIndex).padStart(3)}`;
-      // 缓存命中
       const hasCache = snap.cacheRead > 0;
       const cacheStr = hasCache ? ` ⊕${fmtNum(snap.cacheRead, 3)}` : "";
       const line = theme.fg(
         "dim",
-        `║  ${turn} ${model} ↑${fmtNum(snap.input, 4)} ↓${fmtNum(snap.output, 4)}${cacheStr} ${fmtCost(snap.cost)}`,
+        `║  ${turn} ${display} ↑${fmtNum(snap.input, 4)} ↓${fmtNum(snap.output, 4)}${cacheStr} ${fmtCost(snap.cost)}`,
       );
       container.addChild(new Text(line, 0, 0));
     }
