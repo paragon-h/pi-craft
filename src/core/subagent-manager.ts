@@ -22,6 +22,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
+import { estimateCost } from "./token-tracker";
 
 // ─── 类型 ────────────────────────────────────────────────────
 
@@ -332,7 +333,7 @@ export class SubagentManager {
                 currentResult.usage.output += usage.output || 0;
                 currentResult.usage.cacheRead += usage.cacheRead || 0;
                 currentResult.usage.cacheWrite += usage.cacheWrite || 0;
-                currentResult.usage.cost += (usage as Record<string, Record<string, number>>).cost?.total || 0;
+                currentResult.usage.cost += (usage as Record<string, Record<string, number>>).cost?.total || estimateCost(currentResult.model, { input: usage.input, output: usage.output, cacheRead: usage.cacheRead }) || 0;
                 currentResult.usage.contextTokens = usage.totalTokens || 0;
               }
               const msgRecord = msg as Record<string, unknown>;
