@@ -126,8 +126,12 @@ export class TokenTracker {
 
     this.turnIndex++;
 
+    // Normalize model name for display
+    const modelName = this.getModelName(model) ?? model ?? "unknown";
+    const providerName = provider ?? "unknown";
+
     // Model stats
-    const modelKey = model ?? "unknown";
+    const modelKey = modelName;
     const modelStats = this.stats.byModel.get(modelKey) ?? {
       input: 0,
       output: 0,
@@ -145,7 +149,7 @@ export class TokenTracker {
     this.stats.byModel.set(modelKey, modelStats);
 
     // Provider stats
-    const providerKey = provider ?? "unknown";
+    const providerKey = providerName;
     const providerStats = this.stats.byProvider.get(providerKey) ?? {
       input: 0,
       output: 0,
@@ -167,8 +171,8 @@ export class TokenTracker {
     // History
     this.stats.history.push({
       timestamp: Date.now(),
-      model: modelKey,
-      provider: providerKey,
+      model: modelName,
+      provider: providerName,
       input,
       output,
       cacheRead,
@@ -285,19 +289,27 @@ export class TokenTracker {
     this.modelProviders.set(modelId, provider);
   }
 
-  /** Get provider for a model, falling back to string parsing */
+  /** Get provider for a model, using stored mapping */
   getProvider(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
-    // Exact match
     if (this.modelProviders.has(modelId)) return this.modelProviders.get(modelId);
-    // Try last segment (e.g. "deepseek-v4-pro" from "a/b/deepseek-v4-pro")
     const lastSegment = modelId.split("/").pop();
     if (lastSegment && this.modelProviders.has(lastSegment)) return this.modelProviders.get(lastSegment);
-    // Try each stored key as substring
     for (const [key, provider] of this.modelProviders) {
       if (modelId.includes(key)) return provider;
     }
     return undefined;
+  }
+
+  /** Get display name for a model, stripping provider prefix */
+  getModelName(modelId: string | undefined): string | undefined {
+    if (!modelId) return undefined;
+    // Try to find the model ID from our stored mapping
+    for (const key of this.modelProviders.keys()) {
+      if (modelId.endsWith(key)) return key;
+    }
+    // Fallback: last segment
+    return modelId.split("/").pop();
   }
 
   toPersistenceData(): {

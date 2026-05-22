@@ -72,6 +72,7 @@ export default function (pi: ExtensionAPI) {
     // Sync model to subagent manager
     if (ctx.model) {
       subagent.setParentModel(ctx.model.id, ctx.model.provider);
+      tracker.setModelProvider(ctx.model.id, ctx.model.provider);
     }
 
     // Restore token data
