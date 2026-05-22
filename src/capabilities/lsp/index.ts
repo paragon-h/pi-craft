@@ -77,13 +77,12 @@ class LspStatus {
     const state = getState();
     if (!state?.statusline) return;
 
-    const active = Array.from(this.servers.values())
-      .filter(s => s.running)
-      .map(s => s.label);
+    const all = Array.from(this.servers.values());
+    const available = all.filter(s => s.available).map(s => s.label);
 
     state.statusline.updateLsp({
-      active: active.length > 0,
-      servers: active,
+      active: available.length > 0,
+      servers: available,
     });
   }
 
@@ -127,14 +126,13 @@ const lspStatus = new LspStatus();
 
 export default function (pi: ExtensionAPI) {
   const config = getCraftConfig();
-  if (!isOn(config, "enableLsp")) {
-    // 关闭时清除状态栏
-    getState()?.statusline?.updateLsp(null);
-    return;
-  }
+  if (!isOn(config, "enableLsp")) return;
 
-  // Scan installed servers on startup
-  lspStatus.scanForServers();
+  // Defer scan to session_start — Core's initState may not be ready yet
+  pi.on("session_start", async (_event, ctx) => {
+    getState()?.statusline?.bind(ctx);
+    lspStatus.scanForServers();
+  });
 
   // Register tool placeholder
   pi.registerTool({
