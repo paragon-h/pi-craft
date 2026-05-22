@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { getState, type CraftState } from "../../core/registry";
 import { WorkflowEngine, generateTopicSlug } from "../../core/workflow-engine";
 import type { WorkflowStage } from "../../core/workflow-engine";
+import { Type } from "typebox";
 
 // ─── Mode State ────────────────────────────────────────────────
 
@@ -350,6 +351,54 @@ export default async function (pi: ExtensionAPI) {
 
       await registerScenarioHandlers(ctx);
       await startWorkflow(ctx, scopeTarget);
+    },
+  });
+
+  // ─── start_coding_workflow Tool ──────────────────────
+  // LLM can call this to auto-start the coding workflow
+  pi.registerTool({
+    name: "start_coding_workflow",
+    label: "Start Coding Workflow",
+    description: [
+      "Start the multi-stage coding workflow. Use when you need structured development for a complex feature.",
+      "Stages: code_analysis → requirement → design → testing → implementation",
+      "Optionally skip to a specific stage if analysis/design already done.",
+      "Available stages: code_analysis, requirement, design, testing, implementation",
+    ].join(" "),
+    parameters: Type.Object({
+      requirement: Type.String({ description: "What to build — a clear one-line description" }),
+      stage: Type.Optional(Type.String({ description: "Skip to this stage. Default: code_analysis" })),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const s = shared();
+      if (!s) {
+        return { content: [{ type: "text", text: "Core extension not initialized. Try /reload." }], details: {} };
+      }
+      s.statusline.bind(ctx);
+      ensureAgentsLoaded();
+
+      const req = (params as any).requirement as string;
+      const stageArg = ((params as any).stage as string)?.toLowerCase();
+      const targetStage = (VALID_STAGES.includes(stageArg) ? stageArg : "code_analysis") as WorkflowStage;
+      const topicSlug = generateTopicSlug(req);
+
+      const engine = WorkflowEngine.create("coding", req, topicSlug, ctx.cwd);
+      engine.transition(targetStage);
+      setEngine(engine);
+      s.statusline.updateWorkflow("coding", targetStage);
+      pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
+
+      await registerScenarioHandlers(ctx);
+      await startWorkflow(ctx, req);
+
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Coding workflow started at **${targetStage}** (slug: ${topicSlug}).\n\nRequirement: ${req}`,
+        }],
+        details: {},
+      };
     },
   });
 
