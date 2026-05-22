@@ -91,14 +91,15 @@ export function createTokenDashboard(
   c.addChild(new Text(dim(`║  Session cost: ${fmtCost(sessionCost)}  │  Throughput: ${throughput}`), 0, 0));
   c.addChild(new Text(dim("║"), 0, 0));
 
+  // Dynamic column widths based on terminal width
+  const colModel = Math.max(22, Math.min(40, w - 70));
+  const colNum = 7;
+  const colBar = 12;
+  const colCache = 11;
+  const colCost = 8;
+
   // ── By Model ──
   if (modelStats.length > 0) {
-    // Dynamic column widths based on terminal width
-    const colModel = Math.max(22, Math.min(40, w - 70));
-    const colNum = 7;
-    const colBar = 12;
-    const colCache = 11;
-    const colCost = 8;
 
     c.addChild(new Text(accent(
       pad("║ Model", colModel + 2) + pad("↑In", colNum) + pad("↓Out", colNum) + pad("", colBar) + pad("⊕Cache", colCache) + "Cost"
