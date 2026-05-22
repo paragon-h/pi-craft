@@ -338,8 +338,18 @@ const PROVIDER_PRICING: Record<string, { input: number; cacheRead: number; outpu
 };
 
 export function estimateCost(model: string | undefined, usage: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }): number | undefined {
-  const provider = model?.split("/")[0]?.toLowerCase();
-  const pricing = provider ? PROVIDER_PRICING[provider] : undefined;
+  if (!model) return undefined;
+
+  const modelLower = model.toLowerCase();
+  const provider = modelLower.split("/")[0];
+
+  // Match by provider first, then by model name substring
+  let pricing = PROVIDER_PRICING[provider];
+  if (!pricing) {
+    for (const [key, p] of Object.entries(PROVIDER_PRICING)) {
+      if (modelLower.includes(key)) { pricing = p; break; }
+    }
+  }
   if (!pricing) return undefined;
 
   const input = usage.input ?? 0;
