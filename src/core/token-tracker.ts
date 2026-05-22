@@ -288,7 +288,16 @@ export class TokenTracker {
   /** Get provider for a model, falling back to string parsing */
   getProvider(modelId: string | undefined): string | undefined {
     if (!modelId) return undefined;
-    return this.modelProviders.get(modelId) ?? modelId.split("/")[0];
+    // Exact match
+    if (this.modelProviders.has(modelId)) return this.modelProviders.get(modelId);
+    // Try last segment (e.g. "deepseek-v4-pro" from "a/b/deepseek-v4-pro")
+    const lastSegment = modelId.split("/").pop();
+    if (lastSegment && this.modelProviders.has(lastSegment)) return this.modelProviders.get(lastSegment);
+    // Try each stored key as substring
+    for (const [key, provider] of this.modelProviders) {
+      if (modelId.includes(key)) return provider;
+    }
+    return undefined;
   }
 
   toPersistenceData(): {
