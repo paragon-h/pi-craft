@@ -118,7 +118,7 @@ export function createTokenDashboard(
   if (breakdown.length > 0) {
     container.addChild(new Text(theme.fg("accent", theme.bold("║ Per Subagent")), 0, 0));
     for (const sa of breakdown) {
-      const agentName = sa.agent.length > 18 ? sa.agent.slice(0, 17) + "…" : sa.agent.padEnd(18);
+      const agentName = sa.agent.length > 22 ? sa.agent.slice(0, 21) + "…" : sa.agent.padEnd(22);
       const cacheStr = sa.cacheRead > 0 ? ` ⊕${fmtNum(sa.cacheRead, 4)}` : "";
       const line = theme.fg(
         "dim",
@@ -138,11 +138,11 @@ export function createTokenDashboard(
 
   // By Model (with cache columns)
   if (modelStats.length > 0) {
-    container.addChild(new Text(theme.fg("accent", theme.bold("║ By Model                     ↑Input    ↓Output   ⊕Cache    Cost")), 0, 0));
+    container.addChild(new Text(theme.fg("accent", theme.bold("║ By Model                         ↑Input    ↓Output   ⊕Cache    Cost")), 0, 0));
     for (const { model, stats } of modelStats.slice(0, 6)) {
       const ratio = maxInput > 0 ? stats.input / maxInput : 0;
       // Show last 28 chars — most informative part of the model path
-      const display = model.length > 28 ? "…" + model.slice(-27) : model.padEnd(28);
+      const display = model.length > 30 ? "…" + model.slice(-29) : model.padEnd(30);
       const pb = bar(ratio, 10, theme);
       // 每个 model 的缓存命中率
       const modelTotal = stats.input + stats.cacheRead;
@@ -163,7 +163,7 @@ export function createTokenDashboard(
   if (providerStats.length > 0) {
     container.addChild(new Text(theme.fg("accent", theme.bold("║ By Provider")), 0, 0));
     for (const { provider, stats } of providerStats.slice(0, 4)) {
-      const pv = provider.length > 16 ? provider.slice(0, 15) + "…" : provider.padEnd(16);
+      const pv = provider.length > 20 ? provider.slice(0, 19) + "…" : provider.padEnd(20);
       const line = theme.fg(
         "dim",
         `║  ${pv} ${String(stats.requests).padStart(3)} req  ↑${fmtNum(stats.input, 5)} ↓${fmtNum(stats.output, 5)}  ${fmtCost(stats.cost)}`,
@@ -182,7 +182,7 @@ export function createTokenDashboard(
   if (history.length > 0) {
     container.addChild(new Text(theme.fg("accent", theme.bold("║ Recent Turns")), 0, 0));
     for (const snap of history.slice(-10).reverse()) {
-      const display = snap.model.length > 22 ? "…" + snap.model.slice(-21) : snap.model.padEnd(22);
+      const display = snap.model.length > 24 ? "…" + snap.model.slice(-23) : snap.model.padEnd(24);
       const turn = `#${String(snap.turnIndex).padStart(3)}`;
       const hasCache = snap.cacheRead > 0;
       const cacheStr = hasCache ? ` ⊕${fmtNum(snap.cacheRead, 3)}` : "";

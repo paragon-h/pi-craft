@@ -221,7 +221,7 @@ export default function (pi: ExtensionAPI) {
       const { matchesKey, Key } = await import("@earendil-works/pi-tui");
 
       await ctx.ui.custom((_tui, theme, _kb, done) => {
-        const dashboard = createTokenDashboard(tracker, theme, 80);
+        const dashboard = createTokenDashboard(tracker, theme, 100);
         return {
           render: (w: number) => dashboard.render(w),
           invalidate: () => dashboard.invalidate(),
