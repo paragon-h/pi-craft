@@ -126,12 +126,10 @@ export class TokenTracker {
 
     this.turnIndex++;
 
-    // Normalize model name for display
-    const modelName = this.getModelName(model) ?? model ?? "unknown";
     const providerName = provider ?? "unknown";
 
     // Model stats
-    const modelKey = modelName;
+    const modelKey = model ?? "unknown";
     const modelStats = this.stats.byModel.get(modelKey) ?? {
       input: 0,
       output: 0,
@@ -171,8 +169,8 @@ export class TokenTracker {
     // History
     this.stats.history.push({
       timestamp: Date.now(),
-      model: modelName,
-      provider: providerName,
+      model: modelKey,
+      provider: providerKey,
       input,
       output,
       cacheRead,
@@ -299,17 +297,6 @@ export class TokenTracker {
       if (modelId.includes(key)) return provider;
     }
     return undefined;
-  }
-
-  /** Get display name for a model, stripping provider prefix */
-  getModelName(modelId: string | undefined): string | undefined {
-    if (!modelId) return undefined;
-    // Try to find the model ID from our stored mapping
-    for (const key of this.modelProviders.keys()) {
-      if (modelId.endsWith(key)) return key;
-    }
-    // Fallback: last segment
-    return modelId.split("/").pop();
   }
 
   toPersistenceData(): {
