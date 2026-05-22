@@ -10,6 +10,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Type } from "typebox";
 import { getCraftConfig, isOn } from "../../core/config";
 import { getState } from "../../core/registry";
 
@@ -147,10 +148,10 @@ export default function (pi: ExtensionAPI) {
       "  references — Find all references to a symbol",
       "(LSP implementation in progress — currently returns stub)",
     ].join("\n"),
-    parameters: {
-      action: { type: "string", description: "diagnostics | hover | definition | references" },
-      path: { type: "string", description: "File path relative to project root" },
-    } as any,
+    parameters: Type.Object({
+      action: Type.String({ description: "diagnostics | hover | definition | references" }),
+      path: Type.String({ description: "File path relative to project root" }),
+    }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const action = (params as any).action as string;
