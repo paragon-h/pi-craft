@@ -20,6 +20,7 @@ const STATUS_KEYS = {
   subagent: "craft-subagent",
   parallel: "craft-parallel",
   guard: "craft-guard",
+  lsp: "craft-lsp",
 } as const;
 
 // ─── 工作流阶段 → 图标映射 ─────────────────────────────────────
@@ -141,6 +142,28 @@ export class StatuslineManager {
     } else {
       this.ctx.ui.setStatus(STATUS_KEYS.guard, undefined);
     }
+  }
+
+  // ─── LSP 状态 ────────────────────────────────────────
+
+  updateLsp(info: { active: boolean; servers: string[] } | null): void {
+    if (!this.ctx?.hasUI) return;
+    const t = this.theme();
+
+    if (!info) {
+      this.ctx.ui.setStatus(STATUS_KEYS.lsp, undefined);
+      return;
+    }
+
+    if (!info.active || info.servers.length === 0) {
+      this.ctx.ui.setStatus(STATUS_KEYS.lsp, t.fg("dim", "🔍 LSP"));
+      return;
+    }
+
+    const label = info.servers.length === 1
+      ? info.servers[0]
+      : info.servers.join(",");
+    this.ctx.ui.setStatus(STATUS_KEYS.lsp, t.fg("success", `🔍 ${label}`));
   }
 
   // ─── 场景标识（每个场景独立的 key，不互相覆盖）──────
