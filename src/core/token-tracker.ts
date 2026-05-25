@@ -45,6 +45,8 @@ export interface TokenStats {
   total: {
     input: number;
     output: number;
+    cacheRead: number;
+    cacheWrite: number;
     cost: number;
     turns: number;
   };
@@ -55,6 +57,14 @@ export interface TokenStats {
     costAtStart: number;
   };
   history: TokenSnapshot[];
+}
+
+export interface DailyStats {
+  date: string;      // "YYYY-MM-DD"
+  input: number;
+  output: number;
+  cost: number;
+  turns: number;
 }
 
 // ─── 格式化 ──────────────────────────────────────────────────
@@ -89,11 +99,16 @@ export class TokenTracker {
   private modelProviders = new Map<string, string>();
   private static CUSTOM_TYPE = "craft-token-stats";
 
+  // ── Session & daily tracking ─────────
+  private sessionCount = 0;
+  private currentSessionStart = 0;
+  private dailyStats = new Map<string, DailyStats>();
+
   constructor() {
     this.stats = {
       byModel: new Map(),
       byProvider: new Map(),
-      total: { input: 0, output: 0, cost: 0, turns: 0 },
+      total: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
       session: {
         startTime: Date.now(),
         inputAtStart: 0,
@@ -163,6 +178,8 @@ export class TokenTracker {
     // Total
     this.stats.total.input += input;
     this.stats.total.output += output;
+    this.stats.total.cacheRead += cacheRead;
+    this.stats.total.cacheWrite += cacheWrite;
     this.stats.total.cost += cost;
     this.stats.total.turns++;
 
@@ -183,6 +200,16 @@ export class TokenTracker {
     if (this.stats.history.length > 100) {
       this.stats.history = this.stats.history.slice(-100);
     }
+
+    // Daily aggregation
+    const date = new Date(this.stats.history[this.stats.history.length - 1].timestamp)
+      .toISOString().slice(0, 10);
+    const existing = this.dailyStats.get(date) ?? { date, input: 0, output: 0, cost: 0, turns: 0 };
+    existing.input += input;
+    existing.output += output;
+    existing.cost += cost;
+    existing.turns++;
+    this.dailyStats.set(date, existing);
   }
 
   // ─── 查询 ────────────────────────────────────────────
@@ -223,39 +250,35 @@ export class TokenTracker {
 
   /** 总消耗 = 主 agent + subagent */
   getTotalAllIn(): { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number } {
-    // 聚合所有 model 的 cache 数据
-    let cacheRead = 0;
-    let cacheWrite = 0;
-    for (const [, stats] of this.stats.byModel) {
-      cacheRead += stats.cacheRead;
-      cacheWrite += stats.cacheWrite;
-    }
     return {
       input: this.stats.total.input + this.subagentTokens.input,
       output: this.stats.total.output + this.subagentTokens.output,
-      cacheRead: cacheRead + this.subagentTokens.cacheRead,
-      cacheWrite: cacheWrite + this.subagentTokens.cacheWrite,
+      cacheRead: this.stats.total.cacheRead + this.subagentTokens.cacheRead,
+      cacheWrite: this.stats.total.cacheWrite + this.subagentTokens.cacheWrite,
       cost: this.stats.total.cost + this.subagentTokens.cost,
       turns: this.stats.total.turns + this.subagentTokens.turns,
     };
   }
 
-  /** 缓存命中率 = cacheRead / (cacheRead + input)，按 model 分别计算 */
+  /** 缓存命中率 = cacheRead / (cacheRead + input) */
   getCacheHitRate(): { rate: number; cacheRead: number; input: number; savings: number } {
-    let totalCacheRead = 0;
-    let totalInput = 0;
-    for (const [, stats] of this.stats.byModel) {
-      totalCacheRead += stats.cacheRead;
-      totalInput += stats.input;
-    }
-    // 加上 subagent 的
-    totalCacheRead += this.subagentTokens.cacheRead;
-    totalInput += this.subagentTokens.input;
+    const totalCacheRead = this.stats.total.cacheRead + this.subagentTokens.cacheRead;
+    const totalInput = this.stats.total.input + this.subagentTokens.input;
 
     const total = totalCacheRead + totalInput;
     const rate = total > 0 ? totalCacheRead / total : 0;
-    // Deepseek: cache hit ~$0.07/M vs miss ~$0.27/M, 节省约 74%
-    const savings = totalCacheRead > 0 ? totalCacheRead * 0.00000027 * 0.74 : 0;
+
+    // Estimate savings from actual cost data (cache reads ~75% cheaper on average)
+    let savings = 0;
+    if (totalCacheRead > 0 && totalInput > 0) {
+      const totalCost = this.stats.total.cost + this.subagentTokens.cost;
+      if (totalCost > 0) {
+        // totalCost = regularInput * price + cacheRead * price * 0.25
+        // → price = totalCost / (regularInput + cacheRead * 0.25)
+        const fullInputPrice = totalCost / (totalInput + totalCacheRead * 0.25);
+        savings = totalCacheRead * fullInputPrice * 0.75;
+      }
+    }
     return { rate, cacheRead: totalCacheRead, input: totalInput, savings };
   }
 
@@ -273,6 +296,99 @@ export class TokenTracker {
 
   getSessionCost(): number {
     return this.stats.total.cost - this.stats.session.costAtStart;
+  }
+
+  // ── Session & daily tracking ───────
+
+  /** Call on session_start to track session count and duration */
+  recordSessionStart(): void {
+    this.sessionCount++;
+    this.currentSessionStart = Date.now();
+  }
+
+  getSessionCount(): number {
+    return this.sessionCount;
+  }
+
+  getCurrentSessionDuration(): string {
+    if (!this.currentSessionStart) return "N/A";
+    const ms = Date.now() - this.currentSessionStart;
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+    return `${Math.floor(hrs / 24)}d ${hrs % 24}h ${mins % 60}m`;
+  }
+
+  /** Sorted daily stats (newest first) */
+  getDailyStatsList(): DailyStats[] {
+    return Array.from(this.dailyStats.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }
+
+  /** Favorite model by total token volume */
+  getFavoriteModel(): string {
+    let best = "N/A";
+    let max = 0;
+    for (const [model, stats] of this.stats.byModel) {
+      const tokens = stats.input + stats.output;
+      if (tokens > max) { max = tokens; best = model; }
+    }
+    return best;
+  }
+
+  /** Active days (days with any usage) */
+  getActiveDayCount(): { active: number; total: number } {
+    const days = Array.from(this.dailyStats.keys()).sort();
+    if (days.length === 0) return { active: 0, total: 0 };
+    const first = new Date(days[0]);
+    const last = new Date(days[days.length - 1]);
+    const total = Math.ceil((last.getTime() - first.getTime()) / 86400000) + 1;
+    return { active: days.length, total };
+  }
+
+  /** Most active day */
+  getMostActiveDay(): { date: string; tokens: number } | null {
+    let best: DailyStats | null = null;
+    for (const ds of this.dailyStats.values()) {
+      if (!best || (ds.input + ds.output) > (best.input + best.output)) best = ds;
+    }
+    if (!best) return null;
+    return { date: best.date, tokens: best.input + best.output };
+  }
+
+  /** Calculate streaks from daily data */
+  getStreaks(): { longest: number; current: number } {
+    const dates = new Set(this.dailyStats.keys());
+    if (dates.size === 0) return { longest: 0, current: 0 };
+
+    const sorted = Array.from(dates).sort();
+    let longest = 0;
+    let current = 1;
+    let streak = 1;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = new Date(sorted[i - 1]);
+      const curr = new Date(sorted[i]);
+      const diff = (curr.getTime() - prev.getTime()) / 86400000;
+      if (diff === 1) {
+        streak++;
+      } else {
+        longest = Math.max(longest, streak);
+        streak = 1;
+      }
+    }
+    longest = Math.max(longest, streak);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const lastDate = sorted[sorted.length - 1];
+    const lastDiff = (new Date(today).getTime() - new Date(lastDate).getTime()) / 86400000;
+    if (lastDiff <= 1) {
+      current = streak;
+    } else {
+      current = 0;
+    }
+
+    return { longest, current };
   }
 
   getThroughput(): string {
@@ -305,13 +421,17 @@ export class TokenTracker {
     total: TokenStats["total"];
     session: TokenStats["session"];
     history: TokenSnapshot[];
+    dailyStats: Array<[string, DailyStats]>;
+    sessionCount: number;
   } {
     return {
       byModel: Array.from(this.stats.byModel.entries()),
       byProvider: Array.from(this.stats.byProvider.entries()),
       total: { ...this.stats.total },
       session: { ...this.stats.session },
-      history: [...this.stats.history.slice(-20)], // 仅保留最近 20 条
+      history: [...this.stats.history.slice(-20)],
+      dailyStats: Array.from(this.dailyStats.entries()).slice(-400),
+      sessionCount: this.sessionCount,
     };
   }
 
@@ -327,7 +447,7 @@ export class TokenTracker {
       tracker.stats.byProvider = new Map(d.byProvider as Array<[string, ProviderStats]>);
     }
     if (d.total && typeof d.total === "object") {
-      tracker.stats.total = { ...(d.total as TokenStats["total"]) };
+      tracker.stats.total = { ...tracker.stats.total, ...(d.total as TokenStats["total"]) };
     }
     if (d.session && typeof d.session === "object") {
       tracker.stats.session = {
@@ -337,6 +457,12 @@ export class TokenTracker {
     }
     if (Array.isArray(d.history)) {
       tracker.stats.history = d.history as TokenSnapshot[];
+    }
+    if (Array.isArray(d.dailyStats)) {
+      tracker.dailyStats = new Map(d.dailyStats as Array<[string, DailyStats]>);
+    }
+    if (typeof d.sessionCount === "number") {
+      tracker.sessionCount = d.sessionCount;
     }
 
     return tracker;

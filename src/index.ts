@@ -69,6 +69,9 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     statusline.bind(ctx);
 
+    // Track session
+    tracker.recordSessionStart();
+
     // Sync model to subagent manager
     if (ctx.model) {
       subagent.setParentModel(ctx.model.id, ctx.model.provider);
@@ -217,17 +220,32 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const { createTokenDashboard } = await import("./ui/token-dashboard");
+      const { createOverviewDashboard, createDetailDashboard } = await import("./ui/token-dashboard");
       const { matchesKey, Key } = await import("@earendil-works/pi-tui");
 
       await ctx.ui.custom((_tui, theme, _kb, done) => {
-        const dashboard = createTokenDashboard(tracker, theme, 100);
+        let showDetail = false;
+        let overview = createOverviewDashboard(tracker, theme, 80);
+        let detail = createDetailDashboard(tracker, theme, 80);
+        let lastW = 0;
+
         return {
-          render: (w: number) => dashboard.render(w),
-          invalidate: () => dashboard.invalidate(),
+          render: (w: number) => {
+            if (w !== lastW) {
+              overview = createOverviewDashboard(tracker, theme, w);
+              detail = createDetailDashboard(tracker, theme, w);
+              lastW = w;
+            }
+            return showDetail ? detail.render(w) : overview.render(w);
+          },
+          invalidate: () => (showDetail ? detail : overview).invalidate(),
           handleInput: (data: string) => {
             if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
               done(undefined);
+              return;
+            }
+            if (matchesKey(data, Key.tab)) {
+              showDetail = !showDetail;
             }
           },
         };

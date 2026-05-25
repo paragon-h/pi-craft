@@ -1,9 +1,9 @@
 ---
-name: pi-craft-dev
-description: pi-craft project development conventions — TypeScript, pi extension API, workflow patterns, module structure
+name: pi-craft-conventions
+description: pi-craft 开发约定 — TypeScript、pi 扩展 API、工作流模式、模块结构
 ---
 
-# pi-craft Development Conventions
+# pi-craft 开发约定
 
 ## Tech Stack
 - TypeScript, ES modules (`"type": "module"` in package.json)
@@ -25,15 +25,20 @@ src/
 │   ├── statusline.ts
 │   ├── token-dashboard.ts
 │   └── components/
-└── workflows/            # Workflow scenarios and stages
-    └── coding/
-        ├── index.ts      # Scenario entry
-        ├── develop/      # Develop sub-scenario
-        │   ├── index.ts  # State machine + event handlers
-        │   └── stages/   # Per-stage config (prompt, tools, rules)
-        ├── review/
-        ├── agents/       # Subagent definitions (.md with YAML frontmatter)
-        └── prompts/      # Stage-specific prompt templates
+├── capabilities/         # Optional capability extensions
+│   └── lsp/              # LSP diagnostics/hover/definition/references
+└── scenarios/            # Workflow scenarios and stages
+    ├── coding/
+    │   ├── index.ts      # Scenario extension entry (default export)
+    │   ├── develop/      # Develop sub-scenario
+    │   │   ├── index.ts  # Orchestration: register() + start()
+    │   │   └── stages/   # Per-stage config (prompt, tools, rules)
+    │   ├── review/       # Review sub-scenario
+    │   ├── agents/       # Subagent definitions (.md with YAML frontmatter)
+    │   └── prompts/      # Stage-specific prompt templates
+    ├── travel/index.ts   # Placeholder scenario
+    ├── stock/index.ts    # Placeholder scenario
+    └── knowledge/index.ts # Placeholder scenario
 ```
 
 ## Module Rules
@@ -49,11 +54,13 @@ src/
 - Uses `ctx.ui.theme` for color access, never hardcoded ANSI.
 - Status bar via `ctx.ui.setStatus(key, text)`; keys in `STATUS_KEYS` const.
 
-### workflows/ — Workflow scenarios
-- Each scenario folder has `index.ts` exporting `{ name, description, register(), startWorkflow() }`.
-- Stages export consts: `stage`, `label`, `readOnly`, `tools`, `documentSuffix`, `prompt`.
-- Stage prompts use `PLANS_DIR` and `DOCUMENT_PATH` placeholders replaced at runtime.
-- State machine driven by `WorkflowEngine.transition()`, transitions checked in `agent_end`.
+### scenarios/ — Workflow scenarios
+- Each scenario is a pi extension: `index.ts` exports `default function(pi: ExtensionAPI)`.
+- Sub-scenarios (develop, review) export `register(dc)` to set up event handlers and `start(dc, ...)` to kick off.
+- Stages export consts: `stage`, `label`, `readOnly`, `tools`, `documentSuffix`, `prompt`, plus `register()`.
+- Stage prompts use `PLANS_DIR` and `DOCUMENT_PATH` placeholders replaced at runtime via `buildStagePrompt()`.
+- State machine driven by `WorkflowEngine.transition()`, `[STAGE_COMPLETE]` detection in `agent_end`.
+- Config-gated via `isOn(config, "enableXxx")` / `isEnabled(config, "enableXxx")`.
 
 ## Extension Patterns
 
@@ -104,5 +111,5 @@ pi.appendEntry("custom-type", data);  // Write to session
 
 ## Testing
 - Test alongside implementation in the same task.
-- Run `go test ./...` or equivalent for each language.
+- Verify with `npx tsc --noEmit` for type checking.
 - Never create a separate "add tests" task — tests are part of each implementation task.
