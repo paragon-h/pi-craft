@@ -71,9 +71,6 @@ const NEGATIVE_PATTERNS: RegExp[] = [
 /** Minimum cumulative weight to trigger suggestion */
 const MINIMUM_SCORE = 3;
 
-/** Maximum number of recent user messages to analyze */
-const MAX_MESSAGE_COUNT = 3;
-
 // ═══════════════════════════════════════════════════════════════
 // Analysis
 // ═══════════════════════════════════════════════════════════════
@@ -86,29 +83,17 @@ interface AnalysisResult {
 
 /**
  * Analyze recent user messages for development intent.
+ * Messages are passed in reverse chronological order (most recent first).
  */
-function detectDevelopmentIntent(messages: Array<{ role: string; content: Array<{ type: string; text?: string }> }>): AnalysisResult {
+function detectDevelopmentIntent(messages: string[]): AnalysisResult {
   let score = 0;
   const reasons: string[] = [];
   let negativeScore = 0;
 
-  // Collect recent user messages (most recent first, limit to MAX)
-  const userMessages: string[] = [];
-  for (const msg of [...messages].reverse()) {
-    if (userMessages.length >= MAX_MESSAGE_COUNT) break;
-    if (msg.role === "user") {
-      let text = "";
-      for (const part of msg.content) {
-        if (part.type === "text" && part.text) text += part.text;
-      }
-      if (text.trim()) userMessages.push(text.trim());
-    }
-  }
-
-  if (userMessages.length === 0) return { intent: false, score: 0, reasons: [] };
+  if (messages.length === 0) return { intent: false, score: 0, reasons: [] };
 
   // Check the most recent user message first (strongest signal)
-  for (const msg of userMessages) {
+  for (const msg of messages) {
     // Check negative patterns first
     for (const pattern of NEGATIVE_PATTERNS) {
       if (pattern.test(msg)) {
@@ -185,8 +170,20 @@ export default function (pi: ExtensionAPI) {
   if (!isOn(config, "enableWorkflowSuggester")) return;
 
   const cooldown = new CooldownTracker();
+  const recentMessages: string[] = [];
+  const MAX_RECENT = 5;
 
-  // ── turn_end: analyze conversation, suggest workflow ──
+  // ── input: capture user messages ────────────────────
+  pi.on("input", async (event) => {
+    const text = event.text.trim();
+    if (!text || text.startsWith("/")) return; // skip commands and empty
+    recentMessages.push(text);
+    if (recentMessages.length > MAX_RECENT) {
+      recentMessages.shift();
+    }
+  });
+
+  // ── turn_end: analyze recent messages, suggest workflow ──
   pi.on("turn_end", async (_event, ctx) => {
     if (!cooldown.canSuggest()) return;
 
@@ -197,11 +194,10 @@ export default function (pi: ExtensionAPI) {
     const engine = state.engine;
     if (engine && engine.isActive() && engine.getType() === "coding") return;
 
-    // Get recent messages from the conversation
-    const messages = ctx.conversation?.getMessages?.() ?? [];
-    if (messages.length === 0) return;
+    if (recentMessages.length === 0) return;
 
-    // Analyze for development intent
+    // Analyze the most recent messages (most recent first for scoring)
+    const messages = [...recentMessages].reverse();
     const result = detectDevelopmentIntent(messages);
 
     if (!result.intent) return;
@@ -218,8 +214,8 @@ export default function (pi: ExtensionAPI) {
 
     if (ok) {
       cooldown.recordAccept();
+      recentMessages.length = 0; // clear after accept
       ctx.ui.notify("Starting coding workflow... Describe your requirement.", "info");
-      // Trigger the coding:develop command programmatically
       pi.sendUserMessage("/coding:develop\n\nProceed with the coding workflow for the task at hand.", { deliverAs: "steer" });
     } else {
       cooldown.recordDecline();
