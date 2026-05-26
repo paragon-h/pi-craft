@@ -58,9 +58,11 @@ export function buildStagePrompt(
   const { engine } = dc;
   const docPath = engine.getDocumentPathForStage(engine.getStage()) ?? "";
   const plansDir = engine.getContext().plansDir;
+  const requirement = engine.getContext().requirement?.raw ?? "";
   return stagePrompt
     .replace(/DOCUMENT_PATH/g, docPath)
     .replace(/PLANS_DIR/g, plansDir)
+    .replace(/REQUIREMENT/g, requirement)
     + subagentHint(dc.parallelEnabled);
 }
 

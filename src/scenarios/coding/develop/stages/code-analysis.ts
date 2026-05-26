@@ -19,8 +19,9 @@ export const prompt = `[CODE ANALYSIS PHASE — READ-ONLY]
 You are in the code analysis phase. You CANNOT modify source code.
 
 ★ Write the report to: DOCUMENT_PATH
+★ Requirement: REQUIREMENT
 
-GOAL: Analyze the project structure, tech stack, and relevant code.
+GOAL: Analyze the project structure, tech stack, and relevant code for this specific requirement. Focus your analysis on the modules and files most relevant to the requirement.
 
 ## SCOPING:
 **If parallel subagents enabled**: use parallel scouts to analyze in parallel

@@ -94,6 +94,7 @@ export interface WorkflowContext {
     tasksPath: string;
     todosPath: string;
     currentTask: number;
+    approvalMode: "auto" | "per_task" | "on_demand";
     approvalHistory: ApprovalRecord[];
   };
 }
@@ -305,18 +306,35 @@ export class WorkflowEngine {
     }
   }
 
-  rollback(): WorkflowStage | null {
-    if (this.state.stage === "implementation" || this.state.stage === "completed") {
-      // 不允许从实现/完成阶段回退
+  rollback(targetStage?: WorkflowStage): WorkflowStage | null {
+    if (this.state.stage === "completed") {
       return null;
     }
 
     const history = this.state.stageHistory;
     if (history.length < 2) return null;
 
-    // 移除当前阶段
+    if (targetStage) {
+      // Rollback to a specific stage — find it in history (excluding current)
+      let targetIdx = -1;
+      for (let i = history.length - 2; i >= 0; i--) {
+        if (history[i].stage === targetStage) {
+          targetIdx = i;
+          break;
+        }
+      }
+      if (targetIdx < 0) return null;
+      // Remove all stages after target
+      history.splice(targetIdx + 1);
+      const target = history[targetIdx];
+      if (target.exitedAt) target.exitedAt = undefined;
+      this.state.stage = target.stage;
+      this.state.updatedAt = Date.now();
+      return target.stage;
+    }
+
+    // One-step rollback
     history.pop();
-    // 回到上一阶段
     const prev = history[history.length - 1];
     if (prev.exitedAt) prev.exitedAt = undefined;
     this.state.stage = prev.stage;

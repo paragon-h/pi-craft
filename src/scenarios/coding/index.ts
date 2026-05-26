@@ -457,8 +457,8 @@ export default async function (pi: ExtensionAPI) {
 
   // ─── /coding:rollback ────────────────────────────────
   pi.registerCommand("coding:rollback", {
-    description: "Rollback to previous workflow stage",
-    handler: async (_args, ctx) => {
+    description: "Rollback to a previous workflow stage. Use '/coding:rollback design' to jump directly to design.",
+    handler: async (args, ctx) => {
       const s = shared();
       if (!s) return;
       s.statusline.bind(ctx);
@@ -468,13 +468,18 @@ export default async function (pi: ExtensionAPI) {
         ctx.ui.notify("No active workflow to rollback.", "info");
         return;
       }
-      const prev = engine.rollback();
+
+      const stageArg = (args || "").trim().toLowerCase();
+      const validStages: WorkflowStage[] = ["code_analysis", "requirement", "design", "testing", "implementation"];
+      const targetStage = validStages.includes(stageArg as WorkflowStage) ? (stageArg as WorkflowStage) : undefined;
+
+      const prev = engine.rollback(targetStage);
       if (prev) {
         ctx.ui.notify(`Rolled back to: ${prev}`, "info");
         s.statusline.updateWorkflow(engine.getType(), prev as WorkflowStage);
         pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
       } else {
-        ctx.ui.notify("Cannot rollback from current stage.", "warning");
+        ctx.ui.notify("Cannot rollback to that stage.", "warning");
       }
     },
   });

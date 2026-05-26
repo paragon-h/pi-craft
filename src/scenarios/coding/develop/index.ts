@@ -11,12 +11,20 @@ import type { SubagentManager } from "../../../../core/subagent-manager";
 import type { TokenTracker } from "../../../../core/token-tracker";
 import type { StatuslineManager } from "../../../../ui/statusline";
 
-import { updateWidget, getNextStage, AUTO_TRIGGER } from "./flow";
-import { register as registerCodeAnalysis } from "./stages/code-analysis";
-import { register as registerRequirement } from "./stages/requirement";
-import { register as registerDesign } from "./stages/design";
-import { register as registerTesting } from "./stages/testing";
-import { register as registerImplementation } from "./stages/implementation";
+import { updateWidget, getNextStage, AUTO_TRIGGER, buildStagePrompt } from "./flow";
+import { register as registerCodeAnalysis, prompt as codeAnalysisPrompt } from "./stages/code-analysis";
+import { register as registerRequirement, prompt as requirementPrompt } from "./stages/requirement";
+import { register as registerDesign, prompt as designPrompt } from "./stages/design";
+import { register as registerTesting, prompt as testingPrompt } from "./stages/testing";
+import { register as registerImplementation, prompt as implementationPrompt } from "./stages/implementation";
+
+const STAGE_PROMPTS: Record<string, string> = {
+  code_analysis: codeAnalysisPrompt,
+  requirement: requirementPrompt,
+  design: designPrompt,
+  testing: testingPrompt,
+  implementation: implementationPrompt,
+};
 
 export interface DevelopContext {
   pi: ExtensionAPI;
@@ -92,10 +100,15 @@ export function register(dc: DevelopContext): void {
     updateWidget(ctx, engine);
     ctx.ui.notify(`→ ${next}`, "info");
 
-    // Auto-trigger next stage
+    // Auto-trigger next stage — include stage prompt so LLM has full context
     const trigger = AUTO_TRIGGER[next];
     if (trigger) {
-      setTimeout(() => pi.sendUserMessage(trigger, { deliverAs: "steer" }), 0);
+      const stagePrompt = STAGE_PROMPTS[next];
+      const resolved = stagePrompt
+        ? buildStagePrompt(dc, stagePrompt)
+        : "";
+      const fullMessage = trigger + (resolved ? "\n\n" + resolved : "");
+      setTimeout(() => pi.sendUserMessage(fullMessage, { deliverAs: "steer" }), 0);
     }
   });
 
