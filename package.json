@@ -12,6 +12,7 @@
       "./src/capabilities/workflow-suggester/index.ts",
       "./src/capabilities/subagent-widget/index.ts",
       "./src/capabilities/todo/index.ts",
+      "./src/capabilities/tilldone/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
     "video": "",
@@ -46,6 +47,11 @@
         "type": "boolean",
         "default": true,
         "description": "Enable Todo — persistent task list widget with session survival"
+      },
+      "enableTilldone": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable Tilldone — strict task discipline, blocks writes until tasks defined (opt-in)"
       },
       "damageControl": {
         "type": "object",

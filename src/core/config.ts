@@ -32,6 +32,7 @@ export interface CraftConfig {
   enableAgentTeam?: boolean;
   enableWorkflowSuggester?: boolean;
   enableSubagentWidget?: boolean;
+  enableTilldone?: boolean;  // default-off — strict, explicit opt-in
 
   // Capability-Specific Configs
   damageControl?: DamageControlConfig;
