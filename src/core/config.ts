@@ -31,6 +31,7 @@ export interface CraftConfig {
   enableDamageControl?: boolean;
   enableAgentTeam?: boolean;
   enableWorkflowSuggester?: boolean;
+  enableSubagentWidget?: boolean;
 
   // Capability-Specific Configs
   damageControl?: DamageControlConfig;

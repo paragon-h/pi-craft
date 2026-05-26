@@ -10,6 +10,7 @@
       "./src/capabilities/lsp/index.ts",
       "./src/capabilities/damage-control/index.ts",
       "./src/capabilities/workflow-suggester/index.ts",
+      "./src/capabilities/subagent-widget/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
     "video": "",
@@ -34,6 +35,11 @@
         "type": "boolean",
         "default": true,
         "description": "Enable Workflow Suggester — proactively suggests coding workflow when dev intent detected"
+      },
+      "enableSubagentWidget": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable Subagent Widget — persistent TUI widget showing subagent execution progress"
       },
       "damageControl": {
         "type": "object",
