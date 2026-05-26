@@ -9,6 +9,7 @@
       "./src/index.ts",
       "./src/capabilities/lsp/index.ts",
       "./src/capabilities/damage-control/index.ts",
+      "./src/capabilities/workflow-suggester/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
     "video": "",
@@ -29,10 +30,10 @@
         "default": true,
         "description": "Restrict write/edit/bash write operations to the project working directory. Read operations are unrestricted."
       },
-      "enableDamageControl": {
+      "enableWorkflowSuggester": {
         "type": "boolean",
         "default": true,
-        "description": "Enable Damage Control — YAML-driven safety rules engine"
+        "description": "Enable Workflow Suggester — proactively suggests coding workflow when dev intent detected"
       },
       "damageControl": {
         "type": "object",

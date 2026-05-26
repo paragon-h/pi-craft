@@ -30,6 +30,7 @@ export interface CraftConfig {
   enableMcp?: boolean;
   enableDamageControl?: boolean;
   enableAgentTeam?: boolean;
+  enableWorkflowSuggester?: boolean;
 
   // Capability-Specific Configs
   damageControl?: DamageControlConfig;

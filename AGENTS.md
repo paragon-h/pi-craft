@@ -12,10 +12,7 @@ Users can selectively enable scenarios via `settings.json` package filtering:
 // Work computer: Core + Coding only
 { "packages": [{ "source": "pi-craft", "extensions": ["./src/index.ts", "./src/scenarios/coding/index.ts"] }] }
 
-// Life computer: Core + Travel + Stock
-{ "packages": [{ "source": "pi-craft", "extensions": ["./src/index.ts", "./src/scenarios/travel/index.ts", "./src/scenarios/stock/index.ts"] }] }
-
-// Default: all extensions load (same as today)
+// Default: all extensions load
 { "packages": ["pi-craft"] }
 ```
 
@@ -45,17 +42,14 @@ src/
 │   └── components/
 │       └── workflow-progress.ts          # Stage progress bar widget
 └── scenarios/
-    ├── coding/
-    │   ├── index.ts                      # 🔌 Coding Scenario Extension
-    │   │                                  #   /craft:coding, /craft coding|review|status...
-    │   │                                  #   Stage prompt injection, [STAGE_COMPLETE] detection
-    │   ├── develop/index.ts + stages/     # Develop sub-scenario state machine
-    │   ├── review/index.ts + stages/      # Review sub-scenario state machine
-    │   ├── agents/                        # Built-in subagents (.md with YAML frontmatter)
-    │   └── prompts/                       # Prompt templates
-    ├── travel/index.ts                    # 🔌 Travel Scenario (placeholder)
-    ├── stock/index.ts                     # 🔌 Stock Scenario (placeholder)
-    └── knowledge/index.ts                 # 🔌 Knowledge Scenario (placeholder)
+    └── coding/
+        ├── index.ts                      # 🔌 Coding Scenario Extension
+        │                                  #   /craft:coding, /craft coding|review|status...
+        │                                  #   Stage prompt injection, [STAGE_COMPLETE] detection
+        ├── develop/index.ts + stages/     # Develop sub-scenario state machine
+        ├── review/index.ts + stages/      # Review sub-scenario state machine
+        ├── agents/                        # Built-in subagents (.md with YAML frontmatter)
+        └── prompts/                       # Prompt templates
 ```
 
 ### Extension Responsibilities
@@ -95,7 +89,6 @@ Core initializes managers and calls `initState()`. Scenarios read via `getState(
 - `/coding:resume` — Resume an interrupted workflow
 - `/coding:rollback` — Rollback to previous stage
 - `/coding:abort` — Abort current workflow
-- `/travel` `/stock` `/knowledge` — Placeholder scenarios (disabled by default)
 
 ## Config
 In `settings.json` under `craft`:

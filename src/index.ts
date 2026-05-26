@@ -8,7 +8,7 @@
  * 4. CWD Guard — write operation boundary enforcement
  * 5. Safety Interlocks — dangerous command / sensitive file confirms
  *
- * Scenarios (coding, travel, stock, knowledge) are loaded as separate
+ * Scenarios (coding) are loaded as separate
  * extensions. They access shared state via src/core/registry.ts.
  */
 
