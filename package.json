@@ -11,6 +11,7 @@
       "./src/capabilities/damage-control/index.ts",
       "./src/capabilities/workflow-suggester/index.ts",
       "./src/capabilities/subagent-widget/index.ts",
+      "./src/capabilities/todo/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
     "video": "",
@@ -40,6 +41,11 @@
         "type": "boolean",
         "default": true,
         "description": "Enable Subagent Widget — persistent TUI widget showing subagent execution progress"
+      },
+      "enableTodo": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable Todo — persistent task list widget with session survival"
       },
       "damageControl": {
         "type": "object",
