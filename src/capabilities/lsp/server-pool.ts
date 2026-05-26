@@ -68,6 +68,14 @@ export class LspServerPool {
   ): Promise<ServerState> {
     let server = this.servers.get(serverType);
 
+    // Health check: if process died silently, mark as crashed and recreate
+    if (server?.state === "ready" && server.process.exitCode !== null) {
+      server.crashed = true;
+      server.state = "error";
+      this.servers.delete(serverType);
+      server = undefined;
+    }
+
     if (server && server.state === "ready") return server;
 
     // If there's a crashed server, remove it so we can recreate

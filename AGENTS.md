@@ -86,15 +86,26 @@ Core initializes managers and calls `initState()`. Scenarios read via `getState(
 - `/coding:develop [stage]` — Enter coding develop workflow (interactive, auto slug)
 - `/coding:review [target] [stage]` — Start code review workflow
 - `/coding:status` — Show current workflow status
-- `/coding:resume` — Resume an interrupted workflow
-- `/coding:rollback` — Rollback to previous stage
+- `/coding:resume` — Resume an interrupted workflow (auto context injection)
+- `/coding:rollback [stage]` — Rollback to specific stage (e.g. `/coding:rollback design`)
 - `/coding:abort` — Abort current workflow
+
+## Capabilities
+Each Capability is in `src/capabilities/` and independently toggleable:
+| Capability | Config key | Description |
+|-----------|-----------|-------------|
+| LSP | `enableLsp` | Multi-language server diagnostics (TS/Go/Rust/Python) |
+| Damage Control | `enableDamageControl` | YAML safety rules engine (global + project layers) |
+| Workflow Suggester | `enableWorkflowSuggester` | Detects dev intent + suggests coding workflow |
 
 ## Config
 In `settings.json` under `craft`:
 - `enableSubagent` (default: true) — Subagent master switch
 - `enableParallelSubagent` (default: false) — Spawn isolated pi processes for parallel execution
 - `enableCwdGuard` (default: true) — Restrict writes to project working directory
+- `enableLsp` (default: true) — Multi-language server diagnostics
+- `enableDamageControl` (default: true) — YAML safety rules engine
+- `enableWorkflowSuggester` (default: true) — Proactive workflow suggestions
 
 ## Development
 ```bash

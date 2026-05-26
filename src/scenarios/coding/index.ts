@@ -424,7 +424,103 @@ export default async function (pi: ExtensionAPI) {
     },
   });
 
-  // ─── /coding:resume ──────────────────────────────────
+  // ─── Resume Context Builder ───────────────────────────
+
+/** Build a rich context summary for workflow resume so the LLM
+ *  doesn't need to re-read all documents from scratch. */
+function buildResumeContext(engine: WorkflowEngine): string {
+  const ctx = engine.getContext();
+  const currentStage = engine.getStage();
+  const stageHistory = engine.getState().stageHistory;
+
+  const lines: string[] = [];
+
+  // Topic and plans directory
+  lines.push(`**Topic:** ${ctx.topicSlug}`);
+  lines.push(`**Plans directory:** ${ctx.plansDir}`);
+  lines.push("");
+
+  // Completed stages
+  const completed = stageHistory.filter(s => s.exitedAt);
+  if (completed.length > 0) {
+    lines.push("**Completed stages:**");
+    for (const s of completed) {
+      const label = STAGE_LABELS[s.stage] ?? s.stage;
+      const docPath = engine.getDocumentPathForStage(s.stage);
+      lines.push(`- ✅ ${label}${docPath ? ` (${docPath.replace(ctx.plansDir + "/", "")})` : ""}`);
+    }
+    lines.push("");
+  }
+
+  // Current stage context
+  const currentLabel = STAGE_LABELS[currentStage] ?? currentStage;
+  lines.push(`**Current stage:** ${currentLabel}`);
+  lines.push("");
+
+  // Stage-specific context
+  switch (currentStage) {
+    case "code_analysis": {
+      if (ctx.codeAnalysis?.completed) {
+        lines.push(`Code analysis already completed: ${ctx.codeAnalysis.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.requirement?.raw) {
+        lines.push(`Requirement: ${ctx.requirement.raw}`);
+      }
+      break;
+    }
+    case "requirement": {
+      if (ctx.codeAnalysis?.documentPath) {
+        lines.push(`Code analysis: ${ctx.codeAnalysis.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.requirement?.raw) {
+        lines.push(`Original requirement: ${ctx.requirement.raw}`);
+        if (ctx.requirement.clarified) {
+          lines.push(`Clarified: ${ctx.requirement.clarified}`);
+        }
+      }
+      break;
+    }
+    case "design": {
+      if (ctx.requirement?.documentPath) {
+        lines.push(`Requirement doc: ${ctx.requirement.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.codeAnalysis?.documentPath) {
+        lines.push(`Code analysis: ${ctx.codeAnalysis.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      break;
+    }
+    case "testing": {
+      if (ctx.design?.documentPath) {
+        lines.push(`Design doc: ${ctx.design.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      break;
+    }
+    case "implementation": {
+      if (ctx.design?.documentPath) {
+        lines.push(`Design doc: ${ctx.design.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.testing?.documentPath) {
+        lines.push(`Testing plan: ${ctx.testing.documentPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.implementation?.tasksPath) {
+        lines.push(`Task breakdown: ${ctx.implementation.tasksPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.implementation?.todosPath) {
+        lines.push(`Todo list: ${ctx.implementation.todosPath.replace(ctx.plansDir + "/", "")}`);
+      }
+      if (ctx.implementation?.tasks && ctx.implementation.tasks.length > 0) {
+        const done = ctx.implementation.tasks.filter(t => t.status === "done").length;
+        lines.push(`Task progress: ${done}/${ctx.implementation.tasks.length} completed`);
+      }
+      break;
+    }
+  }
+
+  lines.push("");
+  lines.push("Continue the workflow from where you left off. Read any referenced documents as needed.");
+
+  return lines.join("\n");
+}
   pi.registerCommand("coding:resume", {
     description: "Resume an existing coding workflow",
     handler: async (_args, ctx) => {
@@ -448,10 +544,13 @@ export default async function (pi: ExtensionAPI) {
       await registerScenarioHandlers(ctx);
 
       const stageName = STAGE_LABELS[engine.getStage()] ?? engine.getStage();
+      const contextSummary = buildResumeContext(engine);
+      const message = `Workflow resumed. You are in the **${stageName}** phase.
+
+${contextSummary}`;
+
       ctx.ui.notify(`Resumed: coding/${stageName}`, "info");
-      setTimeout(() => pi.sendUserMessage(
-        `Workflow resumed. You are in the **${stageName}** phase. Continue from where you left off.`,
-      ), 0);
+      setTimeout(() => pi.sendUserMessage(message), 0);
     },
   });
 
