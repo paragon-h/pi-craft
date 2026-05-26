@@ -10,6 +10,13 @@ import * as path from "node:path";
 
 const GLOBAL_KEY = "__pi_craft_config__";
 
+export interface DamageControlConfig {
+  /** Path to YAML rules file relative to project root. Default: ".pi/damage-control-rules.yaml" */
+  rules?: string;
+  /** Confirm action behavior */
+  promptMode?: "confirm" | "auto-deny" | "auto-allow";
+}
+
 export interface CraftConfig {
   // Core
   enableSubagent?: boolean;
@@ -23,6 +30,9 @@ export interface CraftConfig {
   enableMcp?: boolean;
   enableDamageControl?: boolean;
   enableAgentTeam?: boolean;
+
+  // Capability-Specific Configs
+  damageControl?: DamageControlConfig;
 }
 
 /** Read and cache config. Call from any extension. */

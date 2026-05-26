@@ -1,0 +1,17 @@
+rules:
+  - name: block-sudo
+    description: 阻止提权操作
+    tool: bash
+    pattern:
+      command: '\bsudo\b'
+    action: block
+    message: "已阻止 sudo 提权操作。"
+  - name: protect-env-files
+    description: 保护环境变量文件
+    tool:
+      - write
+      - edit
+    pattern:
+      path: '**/.env'
+    action: block
+    message: "环境变量文件 (.env) 受保护。"

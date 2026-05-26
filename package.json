@@ -8,6 +8,7 @@
     "extensions": [
       "./src/index.ts",
       "./src/capabilities/lsp/index.ts",
+      "./src/capabilities/damage-control/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
     "video": "",
@@ -27,6 +28,27 @@
         "type": "boolean",
         "default": true,
         "description": "Restrict write/edit/bash write operations to the project working directory. Read operations are unrestricted."
+      },
+      "enableDamageControl": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable Damage Control — YAML-driven safety rules engine"
+      },
+      "damageControl": {
+        "type": "object",
+        "description": "Damage Control configuration",
+        "properties": {
+          "rules": {
+            "type": "string",
+            "description": "Path to YAML rules file relative to project root. Default: .pi/damage-control-rules.yaml"
+          },
+          "promptMode": {
+            "type": "string",
+            "enum": ["confirm", "auto-deny", "auto-allow"],
+            "default": "confirm",
+            "description": "Confirm action behavior: confirm (ask user), auto-deny (auto-block), auto-allow (auto-pass)"
+          }
+        }
       }
     }
   },
@@ -34,10 +56,11 @@
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-agent-core": "*",
-    "typebox": "*"
+    "@earendil-works/pi-agent-core": "*"
   },
   "dependencies": {
-    "typebox": "^0.32.0"
+    "typebox": "^1.0.0",
+    "yaml": "^2.6.0",
+    "minimatch": "^10.0.0"
   }
 }

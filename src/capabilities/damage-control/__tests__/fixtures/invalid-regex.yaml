@@ -1,0 +1,7 @@
+rules:
+  - name: broken
+    tool: bash
+    pattern:
+      command: '[invalid('
+    action: block
+    message: "should be skipped"

@@ -7,6 +7,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
+import * as fs from "node:fs";
 import { Type } from "typebox";
 import { getCraftConfig, isOn } from "../../core/config";
 import { getState } from "../../core/registry";
@@ -46,6 +47,13 @@ const DIAG_SEVERITY: Record<number, string> = {
   4: "💡",
 };
 
+const IGNORED_DIRS = new Set([
+  "node_modules", ".git", "dist", "build", ".next", ".cache",
+  "__pycache__", "target", "vendor", ".venv", "venv", "coverage",
+]);
+
+const MAX_FILES_TO_SCAN = 500;
+
 // ─── LSP Status ─────────────────────────────────────────────────
 
 interface LspServerState {
@@ -83,11 +91,26 @@ class LspStatus {
     });
   }
 
-  scanForServers(): void {
+  scanForServers(cwd: string): void {
     const config = getCraftConfig();
     const userServers = config.lsp?.servers ?? {};
 
+    // Detect which languages are actually used in this project
+    const projectLanguages = detectProjectLanguages(cwd);
+
+    // If project has no recognizable files, fall back to all languages
+    const languagesToCheck =
+      projectLanguages.size > 0
+        ? projectLanguages
+        : new Set(Object.keys(SERVER_LABELS));
+
     for (const [serverType, label] of Object.entries(SERVER_LABELS)) {
+      // Skip languages not used in this project
+      if (!languagesToCheck.has(serverType)) {
+        this.servers.delete(serverType);
+        continue;
+      }
+
       if (userServers[serverType] === null || (userServers[serverType] as unknown) === "") {
         this.setAvailable(serverType, label, false);
         continue;
@@ -137,7 +160,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     getState()?.statusline?.bind(ctx);
-    lspStatus.scanForServers();
+    lspStatus.scanForServers(ctx.cwd);
   });
 
   pi.registerTool({
@@ -235,6 +258,44 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+}
+
+// ─── Project Language Detection ────────────────────────────────
+
+/** Walk the project directory (skipping ignored dirs) to detect which
+ *  languages are present, based on file extensions. Returns server types. */
+function detectProjectLanguages(cwd: string): Set<string> {
+  const serverTypes = new Set<string>();
+  let fileCount = 0;
+
+  function walk(dir: string): void {
+    if (fileCount >= MAX_FILES_TO_SCAN) return;
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // permission errors etc.
+    }
+
+    for (const entry of entries) {
+      if (fileCount >= MAX_FILES_TO_SCAN) return;
+
+      if (entry.isDirectory()) {
+        if (IGNORED_DIRS.has(entry.name)) continue;
+        if (entry.name.startsWith(".")) continue; // skip hidden dirs (.husky, .vscode, etc.)
+        walk(path.join(dir, entry.name));
+      } else if (entry.isFile()) {
+        fileCount++;
+        const ext = path.extname(entry.name);
+        const serverType = EXTENSION_MAP[ext];
+        if (serverType) serverTypes.add(serverType);
+      }
+    }
+  }
+
+  walk(cwd);
+  return serverTypes;
 }
 
 // ─── Formatters ─────────────────────────────────────────────────

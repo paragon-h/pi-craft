@@ -1,0 +1,15 @@
+rules:
+  - name: block-sudo
+    description: 项目级覆盖 — 只warn不block
+    tool: bash
+    pattern:
+      command: '\bsudo\b'
+    action: warn
+    message: "提示: 你正在使用 sudo。"
+  - name: no-console-log
+    description: 项目新增规则
+    tool: write
+    pattern:
+      content: 'console\.log\('
+    action: confirm
+    message: "发现 console.log()。"
