@@ -183,20 +183,55 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // ── turn_end: analyze recent messages, suggest workflow ──
+  // ── before_agent_start: intercept BEFORE AI responds ──
+  // Inject a prompt hint so the AI suggests the workflow proactively,
+  // rather than waiting for a popup after the AI has already started working.
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (!cooldown.canSuggest()) return;
+
+    const state = getState();
+    if (!state) return;
+    const engine = state.engine;
+    if (engine && engine.isActive() && engine.getType() === "coding") return;
+
+    if (recentMessages.length === 0) return;
+
+    const messages = [...recentMessages].reverse();
+    const result = detectDevelopmentIntent(messages);
+
+    if (!result.intent) return;
+
+    cooldown.recordSuggestion();
+
+    // Inject a prompt hint for the AI — don't use system prompt to avoid
+    // interfering with existing stage prompts from coding workflow.
+    const hint = `\n\n[WORKFLOW SUGGESTION]\nThe user's message shows strong development intent (${result.reasons.join(", ")}).\nBefore diving into implementation, BRIEFLY ask: "Start the coding workflow for this?" and use the start_coding_workflow tool if they confirm. Do NOT just start coding — give them the option.`;
+
+    return { systemPrompt: (event.systemPrompt ?? "") + hint };
+  });
+
+  // ── after_workflow_start: clear recent messages ─────
+  // When the coding workflow starts, reset the buffer so we don't
+  // keep suggesting during an active workflow.
+  pi.on("tool_call", async (event) => {
+    if (event.toolName === "start_coding_workflow") {
+      cooldown.recordAccept();
+      recentMessages.length = 0;
+    }
+  });
+
+  // ── turn_end: popup fallback for non-UI sessions ────
   pi.on("turn_end", async (_event, ctx) => {
     if (!cooldown.canSuggest()) return;
 
     const state = getState();
     if (!state) return;
 
-    // Don't suggest if there's already an active coding workflow
     const engine = state.engine;
     if (engine && engine.isActive() && engine.getType() === "coding") return;
 
     if (recentMessages.length === 0) return;
 
-    // Analyze the most recent messages (most recent first for scoring)
     const messages = [...recentMessages].reverse();
     const result = detectDevelopmentIntent(messages);
 
@@ -214,7 +249,7 @@ export default function (pi: ExtensionAPI) {
 
     if (ok) {
       cooldown.recordAccept();
-      recentMessages.length = 0; // clear after accept
+      recentMessages.length = 0;
       ctx.ui.notify("Starting coding workflow... Describe your requirement.", "info");
       pi.sendUserMessage("/coding:develop\n\nProceed with the coding workflow for the task at hand.", { deliverAs: "steer" });
     } else {
