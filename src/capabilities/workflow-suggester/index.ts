@@ -11,6 +11,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getCraftConfig, isOn } from "../../core/config";
 import { getState } from "../../core/registry";
+import { CRAFT_WORKFLOW_TYPE } from "../../core/workflow-types";
 
 // ═══════════════════════════════════════════════════════════════
 // Intent Detection
@@ -189,10 +190,19 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     if (!cooldown.canSuggest()) return;
 
+    // Check if a workflow is already active
+    let workflowActive = false;
+    for (const e of ctx.sessionManager.getBranch()) {
+      if (e.type === "custom" && e.customType === CRAFT_WORKFLOW_TYPE) {
+        const meta = e.data as any;
+        if (meta?.stage && meta.stage !== "done") workflowActive = true;
+        break;
+      }
+    }
+    if (workflowActive) return;
+
     const state = getState();
     if (!state) return;
-    const engine = state.engine;
-    if (engine && engine.isActive() && engine.getType() === "coding") return;
 
     if (recentMessages.length === 0) return;
 
@@ -224,11 +234,19 @@ export default function (pi: ExtensionAPI) {
   pi.on("turn_end", async (_event, ctx) => {
     if (!cooldown.canSuggest()) return;
 
+    // Check if workflow already active
+    let wfActive = false;
+    for (const e of ctx.sessionManager.getBranch()) {
+      if (e.type === "custom" && e.customType === CRAFT_WORKFLOW_TYPE) {
+        const meta = e.data as any;
+        if (meta?.stage && meta.stage !== "done") wfActive = true;
+        break;
+      }
+    }
+    if (wfActive) return;
+
     const state = getState();
     if (!state) return;
-
-    const engine = state.engine;
-    if (engine && engine.isActive() && engine.getType() === "coding") return;
 
     if (recentMessages.length === 0) return;
 
