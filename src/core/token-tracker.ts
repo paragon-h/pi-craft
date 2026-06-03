@@ -97,6 +97,8 @@ export class TokenTracker {
   private subagentDetails: Map<string, { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number; turns: number }> = new Map();
   /** model ID → actual provider name (from model_select event) */
   private modelProviders = new Map<string, string>();
+  private currentModel?: string;
+  private currentProvider?: string;
   private static CUSTOM_TYPE = "craft-token-stats";
 
   // ── Session & daily tracking ─────────
@@ -396,11 +398,47 @@ export class TokenTracker {
     return formatThroughput(this.stats.total.output, elapsed);
   }
 
+  // ─── Export ──────────────────────────────────────────
+
+  /** Collect all stats into a plain JSON-serializable object */
+  toExportJSON(): object {
+    const stats = this.stats;
+    const byModel: Record<string, object> = {};
+    for (const [model, s] of stats.byModel) {
+      byModel[model] = { input: s.input, output: s.output, cacheRead: s.cacheRead, cacheWrite: s.cacheWrite, cost: s.cost, turns: s.turns };
+    }
+    const byProvider: Record<string, object> = {};
+    for (const [provider, s] of stats.byProvider) {
+      byProvider[provider] = { input: s.input, output: s.output, cost: s.cost, requests: s.requests };
+    }
+    const daily: Record<string, object> = {};
+    for (const d of this.getDailyStatsList()) {
+      daily[d.date] = { input: d.input, output: d.output, cost: d.cost, turns: d.turns };
+    }
+    return {
+      exportedAt: new Date().toISOString(),
+      model: this.currentModel ?? "unknown",
+      provider: this.currentProvider ?? "unknown",
+      total: { ...stats.total },
+      byModel,
+      byProvider,
+      subagents: {
+        total: { ...this.subagentTokens },
+        breakdown: this.getSubagentBreakdown(),
+      },
+      daily,
+      history: stats.history,
+      throughput: this.getThroughput(),
+    };
+  }
+
   // ─── 持久化 ──────────────────────────────────────────
 
   /** Record model → provider mapping from model_select event */
   setModelProvider(modelId: string, provider: string): void {
     this.modelProviders.set(modelId, provider);
+    this.currentModel = modelId;
+    this.currentProvider = provider;
   }
 
   /** Get provider for a model, using stored mapping */

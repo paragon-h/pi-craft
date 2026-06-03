@@ -3,10 +3,10 @@
 Pi Coding Agent extension — automated development workflows with subagents, token tracking, and provider optimization.
 
 ## Overview
-pi-craft is a multi-extension package for Pi that provides a modular plugin architecture. The **Core** extension supplies shared infrastructure (token tracking, subagent system, statusline, security guards), and **Scenario** extensions plug in independently for different workflows.
+pi-craft is a multi-extension package for Pi that provides a modular plugin architecture. The **Core** extension supplies shared infrastructure (token tracking, subagent system, statusline, security guards), **Capability** extensions provide independent toggleable features, and the **Coding Scenario** drives skill-based development workflows.
 
-### Scenario Plugin Architecture
-Users can selectively enable scenarios via `settings.json` package filtering:
+### Extension Architecture
+Users can selectively enable extensions via `settings.json` package filtering:
 
 ```jsonc
 // Work computer: Core + Coding only
@@ -19,7 +19,7 @@ Users can selectively enable scenarios via `settings.json` package filtering:
 ## Tech Stack
 - TypeScript, ES modules (`"type": "module"`)
 - No build step — loaded directly by pi via jiti
-- Runtime deps: `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `typebox`
+- Runtime deps: `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `@earendil-works/pi-ai`, `typebox`
 - Node.js built-ins via `node:` prefix
 
 ## Architecture
@@ -28,11 +28,12 @@ Users can selectively enable scenarios via `settings.json` package filtering:
 src/
 ├── index.ts                              # 🔧 Core Extension (always loaded)
 │                                         #   TokenTracker, SubagentManager, StatuslineManager
-│                                         #   /tokens dashboard, cwd guard, safety interlocks
+│                                         #   /tokens dashboard & --export, cwd guard, safety interlocks
 ├── core/
-│   ├── registry.ts                       # 🆕 Cross-extension shared state singleton
-│   ├── workflow-engine.ts                # Generic state machine with persistence
-│   ├── token-tracker.ts                  # Token usage + cache hit rate stats
+│   ├── registry.ts                       # Cross-extension shared state singleton (incl. resetTodo callback)
+│   ├── config.ts                         # CraftConfig types + getCraftConfig() cached config reader
+│   ├── workflow-types.ts                 # Workflow metadata types (lightweight, no state machine)
+│   ├── token-tracker.ts                  # Token usage + cache hit rate + toExportJSON() export
 │   ├── subagent-manager.ts               # Subagent discovery, spawn, execution
 │   ├── subagent-tool.ts                  # Subagent tool registration + TUI
 │   └── cwd-guard.ts                      # Write operation boundary enforcement
@@ -41,15 +42,34 @@ src/
 │   ├── token-dashboard.ts                # /tokens full-screen overlay
 │   └── components/
 │       └── workflow-progress.ts          # Stage progress bar widget
+├── capabilities/                         # Optional, independently toggleable
+│   ├── lsp/                              # Multi-language server diagnostics
+│   ├── damage-control/                   # YAML safety rules engine
+│   ├── workflow-suggester/               # Dev intent detection + proactive suggestions (CN/EN)
+│   ├── subagent-widget/                  # Real-time subagent progress TUI widget
+│   ├── todo/                             # Persistent task list + clear action
+│   └── tilldone/                         # Strict task discipline (opt-in, default off)
 └── scenarios/
     └── coding/
-        ├── index.ts                      # 🔌 Coding Scenario Extension
-        │                                  #   /craft:coding, /craft coding|review|status...
-        │                                  #   Stage prompt injection, [STAGE_COMPLETE] detection
-        ├── develop/index.ts + stages/     # Develop sub-scenario state machine
-        ├── review/index.ts + stages/      # Review sub-scenario state machine
-        ├── agents/                        # Built-in subagents (.md with YAML frontmatter)
+        ├── index.ts                      # 🔌 Coding Scenario — 2 tools + session persistence
+        │                                  #   init_workflow: create plans dir, auto-load stage-1 skill
+        │                                  #   complete_stage: gate output, persist meta, auto-load next skill
+        │                                  #   session_before_compact: preserve workflow context
+        │                                  #   session_start: restore interrupted workflow
+        ├── agents/                        # Built-in subagents (scout/architect/implementer/reviewer)
         └── prompts/                       # Prompt templates
+```
+
+### Skills Directory
+
+```
+skills/
+├── coding-workflow/SKILL.md              # Workflow orchestrator (when to use, stage pipeline)
+├── coding-stage-code-analysis/SKILL.md   # Phase 1: Analyze codebase structure
+├── coding-stage-requirement/SKILL.md     # Phase 2: Clarify requirements via Q&A
+├── coding-stage-design/SKILL.md          # Phase 3: Architecture & component design
+├── coding-stage-testing/SKILL.md         # Phase 4: Testing strategy & approval mode
+└── coding-stage-implementation/SKILL.md  # Phase 5: Code with task tracking
 ```
 
 ### Extension Responsibilities
@@ -57,55 +77,63 @@ src/
 #### Core Extension (`src/index.ts`)
 | Feature | Description |
 |---------|-------------|
-| Token tracking | `message_end` → TokenTracker → persistence |
-| `/tokens` command | Full-screen dashboard + print mode |
+| Token tracking | `message_end` → TokenTracker → persistence; `toExportJSON()` for export |
+| `/tokens` command | Full-screen dashboard + `/tokens --export` JSON export |
 | `ctrl+shift+t` | Quick token summary |
-| Subagent tool | Single/parallel/chain with TUI rendering |
-| CWD guard | Blocks writes outside project directory |
+| Subagent tool | Single agent delegation with TUI rendering |
+| CWD guard | Blocks write/edit/bash-write outside project directory |
 | Safety interlocks | Dangerous commands (sudo/kill/docker), sensitive file writes |
 | Statusline base | Tokens, parallel mode, guard indicator |
-| Workflow restore | Recovers engine state to registry (scenarios re-register handlers) |
 
 #### Coding Scenario Extension (`src/scenarios/coding/index.ts`)
 | Feature | Description |
 |---------|-------------|
-| `/coding:develop` | Interactive requirement input with auto slug generation |
-| `/coding:review [target]` | Code review workflow |
-| `/coding:status\|resume\|rollback\|abort` | Workflow management |
-| Stage prompts | `before_agent_start` injects stage-specific system prompts |
-| Stage transitions | `agent_end` detects `[STAGE_COMPLETE]` |
-| Read-only enforcement | Blocks write/edit in analysis/design phases |
-| Built-in agents | Loads scout, architect, implementer, reviewer |
-| Progress widget | `ctx.ui.setWidget("craft-progress", ...)` |
+| `init_workflow` tool | Creates plans dir, sets session name, records requirement, auto-loads skill |
+| `complete_stage` tool | Gates output file, persists metadata, labels session tree, auto-loads next skill |
+| Stage gating | Rejects files < 80 bytes or < 2 substantial lines (stub detection) |
+| Todo cleanup | Calls `resetTodo()` on workflow done — auto-clears all tasks |
+| Compaction hook | `session_before_compact` preserves workflow context summary |
+| Session restore | `session_start` restores interrupted workflows (skips "done" stage) |
+| Built-in agents | Lazy-loads scout, architect, implementer, reviewer |
 
 ### Shared State (`src/core/registry.ts`)
-Core initializes managers and calls `initState()`. Scenarios read via `getState()`. Since all extensions share the same package module root, imports resolve to the same singleton instance.
+Core initializes managers and calls `initState()`. Scenarios and capabilities read via `getState()`.
+Since all extensions share the same package module root via jiti, imports resolve to the same singleton.
+The registry also provides a `resetTodo` callback registered by the Todo capability and invoked by
+the Coding scenario on workflow completion.
 
 ## Commands
-- `/tokens` — Token usage dashboard (Core)
-- `/coding:develop [stage]` — Enter coding develop workflow (interactive, auto slug)
-- `/coding:review [target] [stage]` — Start code review workflow
+- `/tokens` — Token usage dashboard (Tab for detail)
+- `/tokens --export` — Export full token stats as JSON to `.pi/craft/tokens-{datetime}.json`
 - `/coding:status` — Show current workflow status
-- `/coding:resume` — Resume an interrupted workflow (auto context injection)
-- `/coding:rollback [stage]` — Rollback to specific stage (e.g. `/coding:rollback design`)
-- `/coding:abort` — Abort current workflow
+- `Ctrl+Shift+T` — Quick token summary popup
 
-## Capabilities
-Each Capability is in `src/capabilities/` and independently toggleable:
-| Capability | Config key | Description |
-|-----------|-----------|-------------|
-| LSP | `enableLsp` | Multi-language server diagnostics (TS/Go/Rust/Python) |
-| Damage Control | `enableDamageControl` | YAML safety rules engine (global + project layers) |
-| Workflow Suggester | `enableWorkflowSuggester` | Detects dev intent + suggests coding workflow |
+## Key Design Decisions
+
+### Skills-driven workflow (no state machine)
+Workflow progression is LLM-driven, not code-driven. The extension only provides `init_workflow` and
+`complete_stage` tools. Stage instructions live in `.md` skill files loaded by the LLM on demand.
+This eliminates the old `WorkflowEngine` class and `develop/`/`review/` scenario directories.
+
+### Session entry ordering
+Both `getMeta()` (workflow) and `loadFromSession()` (todo) iterate the session branch in **reverse**
+to get the latest matching entry. Appending always adds to the end, so the last match is current state.
+
+### Gating on stage completion
+`complete_stage` validates output files before accepting them — blocks stub files to prevent
+workflow corruption from incomplete AI outputs.
 
 ## Config
 In `settings.json` under `craft`:
 - `enableSubagent` (default: true) — Subagent master switch
 - `enableParallelSubagent` (default: false) — Spawn isolated pi processes for parallel execution
-- `enableCwdGuard` (default: true) — Restrict writes to project working directory
+- `enableCwdGuard` (default: true) — Restrict write/edit/bash-write to project working directory
 - `enableLsp` (default: true) — Multi-language server diagnostics
 - `enableDamageControl` (default: true) — YAML safety rules engine
-- `enableWorkflowSuggester` (default: true) — Proactive workflow suggestions
+- `enableWorkflowSuggester` (default: true) — Proactive workflow suggestions (CN/EN)
+- `enableSubagentWidget` (default: true) — Real-time subagent progress TUI widget
+- `enableTodo` (default: true) — Persistent task list with session survival
+- `enableTilldone` (default: false) — Strict task discipline (opt-in)
 
 ## Development
 ```bash

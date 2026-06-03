@@ -15,6 +15,7 @@
       "./src/capabilities/tilldone/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
+    "skills": ["./skills"],
     "video": "",
     "image": "",
     "config": {

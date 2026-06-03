@@ -15,7 +15,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getCraftConfig, isOn } from "../../core/config";
 import { getState } from "../../core/registry";
-import type { WorkflowEngine } from "../../core/workflow-engine";
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -37,15 +36,23 @@ interface TodoState {
 // Persistence
 // ═══════════════════════════════════════════════════════════════
 
+
+
 const CUSTOM_TYPE = "craft-todo-state";
 
-/** Resolve the todos.md path from the active workflow engine */
+/** Resolve the todos.md path from the active workflow metadata */
 function getTodoPath(): string | null {
-  const state = getState();
-  const engine = state?.engine;
-  if (!engine || !engine.isActive()) return null;
-  const ctx = engine.getContext();
-  return path.join(ctx.plansDir, "todos.md");
+  // Find the most recent workflow plans directory
+  const plansBase = path.join(process.cwd(), ".pi", "craft", "plans");
+  try {
+    if (!fs.existsSync(plansBase)) return null;
+    const dirs = fs.readdirSync(plansBase).sort().reverse();
+    for (const dir of dirs) {
+      const tp = path.join(plansBase, dir, "todos.md");
+      if (fs.existsSync(tp)) return tp;
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 /** Write current state to todos.md (human readable) */
@@ -77,9 +84,9 @@ function syncToFile(tasks: TodoTask[]): void {
 function loadFromSession(ctx: ExtensionContext): TodoState | null {
   try {
     const entries = ctx.sessionManager.getBranch();
-    for (const entry of entries) {
-      if (entry.type === "custom" && entry.customType === CUSTOM_TYPE) {
-        return entry.data as TodoState;
+    for (let i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].type === "custom" && entries[i].customType === CUSTOM_TYPE) {
+        return entries[i].data as TodoState;
       }
     }
   } catch { /* no session manager available */ }
@@ -162,6 +169,11 @@ class TodoManager {
     return [...this.tasks];
   }
 
+  clear(): void {
+    this.tasks = [];
+    this.persist();
+  }
+
   add(title: string, files?: string[]): TodoTask {
     const task: TodoTask = {
       id: this.nextId++,
@@ -208,6 +220,10 @@ export default function (pi: ExtensionAPI) {
   const manager = new TodoManager(pi);
   let widgetCtx: ExtensionContext | null = null;
 
+  // Register reset callback for workflow completion
+  const state = getState();
+  if (state) state.resetTodo = () => { manager.clear(); updateTui(); };
+
   function updateTui(): void {
     if (!widgetCtx?.hasUI) return;
     const tasks = manager.getAll();
@@ -240,6 +256,7 @@ export default function (pi: ExtensionAPI) {
       "  add — Add a new task (title required)",
       "  update — Update task status or title (id + status/title required)",
       "  complete — Mark a task as done (id required)",
+      "  clear — Remove all tasks",
     ].join("\n"),
     parameters: Type.Object({
       action: Type.String({ description: "list | add | update | complete" }),
@@ -315,6 +332,15 @@ export default function (pi: ExtensionAPI) {
           updateTui();
           return {
             content: [{ type: "text", text: `✅ Task #${task.id} completed: ${task.title}` }],
+            details: {},
+          };
+        }
+
+        case "clear": {
+          manager.clear();
+          updateTui();
+          return {
+            content: [{ type: "text", text: "🧹 All tasks cleared." }],
             details: {},
           };
         }

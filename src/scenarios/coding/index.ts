@@ -1,609 +1,254 @@
 /**
- * Pi Craft — Coding Scenario Extension
+ * Pi Craft — Coding Workflow Scenario (Pi-Native)
  *
- * Self-contained extension for the coding workflow scenario.
- * Must be loaded alongside the Core extension (which provides
- * TokenTracker, SubagentManager, StatuslineManager via registry).
+ * Provides 2 tools: init_workflow + complete_stage.
+ * Stage instructions are skills (.md files), loaded by the LLM on demand.
+ * Flow control: LLM decides when to advance, extension gates + labels + persists.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getState, type CraftState } from "../../core/registry";
-import { WorkflowEngine, generateTopicSlug } from "../../core/workflow-engine";
-import type { WorkflowStage } from "../../core/workflow-engine";
-import { Type } from "typebox";
+import { getState } from "../../core/registry";
+import { CRAFT_WORKFLOW_TYPE } from "../../core/workflow-types";
 
-// ─── Mode State ────────────────────────────────────────────────
-
-let codingInputMode = false;
-let pendingRequirement: string | null = null;
-let pendingStage: WorkflowStage | null = null;
+const CUSTOM_TYPE = CRAFT_WORKFLOW_TYPE;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let agentsLoaded = false;
 
-// ─── Stage Labels ──────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────
 
-const STAGE_LABELS: Record<string, string> = {
-  code_analysis: "code analysis",
-  requirement: "requirement clarification",
-  design: "design",
-  testing: "testing strategy",
-  implementation: "implementation",
-  scope: "review scope",
-  analyze: "review analysis",
-  report: "review report",
-};
-
-// ─── State Access ──────────────────────────────────────────────
-
-/**
- * Get shared state from Core extension.
- * Returns null if Core hasn't initialized yet (parallel loading edge case).
- */
-function shared(): CraftState | null {
-  const s = getState();
-  return s?.statusline ? s : null;
+interface StageRecord {
+  stage: string;
+  completedAt: number;
+  outputFile: string;
 }
 
-/** Engine ref from shared state */
-function engineRef(): WorkflowEngine | null {
-  return shared()?.engine ?? null;
+interface WorkflowMeta {
+  type: "coding";
+  topic: string;
+  requirement: string;
+  plansDir: string;
+  stage: string;
+  startedAt: number;
+  stages: StageRecord[];
 }
 
-function setEngine(e: WorkflowEngine | null): void {
-  const s = shared();
-  if (s) s.engine = e;
+// ─── Helpers ──────────────────────────────────────────────
+
+function getMeta(ctx: ExtensionContext): WorkflowMeta | null {
+  const branch = ctx.sessionManager.getBranch();
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i];
+    if (e.type === "custom" && e.customType === CUSTOM_TYPE) return e.data as WorkflowMeta;
+  }
+  return null;
 }
 
-// ─── Extension Entry ───────────────────────────────────────────
+function formatDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
-export default async function (pi: ExtensionAPI) {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+function gateFile(fullPath: string): string | null {
+  try {
+    const stat = fs.statSync(fullPath);
+    if (stat.size < 80) return `file is only ${stat.size} bytes`;
+    const head = fs.readFileSync(fullPath, "utf-8").slice(0, 200);
+    if (head.split("\n").filter(l => l.trim().length > 20).length < 2) return "file appears to be a stub";
+    return null;
+  } catch (err: any) {
+    if (err.code === "ENOENT") return "file not found";
+    throw err;
+  }
+}
 
-  // ─── Helper: Load built-in agents (lazy, once) ────────
-  function ensureAgentsLoaded(): void {
+// ─── Main ─────────────────────────────────────────────────
+
+export default function (pi: ExtensionAPI) {
+
+  // ── Load built-in agents (lazy, once) ─────────────────
+  function ensureAgents(): void {
     if (agentsLoaded) return;
-    const s = shared();
-    if (!s?.subagentEnabled) return;
-    const builtinAgentsDir = path.join(__dirname, "agents");
-    if (fs.existsSync(builtinAgentsDir)) {
-      s.subagent.loadBuiltinAgents(builtinAgentsDir);
+    const state = getState();
+    const agentsDir = path.join(__dirname, "agents");
+    if (state?.subagentEnabled && fs.existsSync(agentsDir)) {
+      state.subagent.loadBuiltinAgents(agentsDir);
     }
     agentsLoaded = true;
   }
 
-  // ─── Helper: Register develop/review handlers ─────────
-  async function registerScenarioHandlers(ctx: ExtensionContext): Promise<void> {
-    const engine = engineRef();
-    if (!engine || !engine.isActive() || engine.getType() !== "coding") return;
+  // ═══════════════════════════════════════════════════════════
+  // Tool: init_workflow
+  // ═══════════════════════════════════════════════════════════
+  pi.registerTool({
+    name: "init_workflow",
+    label: "Init Workflow",
+    description: "Create plans directory, set session name, record requirement. Call before loading stage skills.",
+    parameters: Type.Object({
+      topic: Type.String({ description: "Short kebab-case topic slug, e.g. 'user-auth'" }),
+      requirement: Type.String({ description: "One-line description of what to build" }),
+    }),
+    async execute(_id, params, _signal, _update, ctx) {
+      ensureAgents();
+      const { topic, requirement } = params as { topic: string; requirement: string };
+      const date = formatDate();
+      const plansDir = path.join(ctx.cwd, ".pi", "craft", "plans", `${date}-${topic}`);
+      fs.mkdirSync(plansDir, { recursive: true });
 
-    const s = shared()!;
-    const dc = {
-      pi, ctx, engine,
-      subagent: s.subagent,
-      tracker: s.tracker,
-      statusline: s.statusline,
-      parallelEnabled: s.parallelEnabled,
-    };
+      const meta: WorkflowMeta = {
+        type: "coding",
+        topic,
+        requirement,
+        plansDir,
+        stage: "code-analysis",
+        startedAt: Date.now(),
+        stages: [],
+      };
 
-    const stage = engine.getStage();
-    if (["code_analysis", "requirement", "design", "testing", "implementation"].includes(stage)) {
-      const { register: registerDevelop } = await import("./develop/index");
-      registerDevelop(dc);
-    }
-    if (["scope", "analyze", "report"].includes(stage)) {
-      const { register: registerReview } = await import("./review/index");
-      registerReview(dc);
-    }
-  }
+      pi.setSessionName(`craft: ${topic}`);
+      pi.appendEntry(CUSTOM_TYPE, meta);
+      ctx.ui.notify(`📁 ${plansDir}`, "info");
 
-  // ─── Helper: Start workflow ───────────────────────────
-  async function startWorkflow(ctx: ExtensionContext, requirement: string): Promise<void> {
-    const engine = engineRef();
-    if (!engine) return;
-
-    const s = shared()!;
-    const dc = {
-      pi, ctx, engine,
-      subagent: s.subagent,
-      tracker: s.tracker,
-      statusline: s.statusline,
-      parallelEnabled: s.parallelEnabled,
-    };
-
-    const stage = engine.getStage();
-    if (["code_analysis", "requirement", "design", "testing", "implementation"].includes(stage)) {
-      const { start: startDevelop } = await import("./develop/index");
-      startDevelop(dc, requirement);
-    }
-    if (["scope", "analyze", "report"].includes(stage)) {
-      const { start: startReview } = await import("./review/index");
-      startReview(dc, requirement);
-    }
-  }
-
-  // ─── Session Start — Restore workflow ─────────────────
-  pi.on("session_start", async (_event, ctx) => {
-    const s = shared();
-    if (!s) return;
-
-    s.statusline.bind(ctx);
-    s.statusline.updateScenario("coding");
-    ensureAgentsLoaded();
-
-    const engine = engineRef();
-    if (engine && engine.isActive() && engine.getType() === "coding") {
-      await registerScenarioHandlers(ctx);
-
-      const stage = engine.getStage();
-      const stageName = STAGE_LABELS[stage] ?? stage;
-      s.statusline.updateWorkflow("coding", stage as WorkflowStage);
-
+      // Auto-load first stage
       setTimeout(() => {
         pi.sendUserMessage(
-          `Session restored. You are in the **${stageName}** phase of the coding workflow. Continue from where you left off.`,
+          `Load \`/skill:stage-code-analysis\` and begin.\n\n**Plans:** ${plansDir}\n**Requirement:** ${requirement}`,
+          { deliverAs: "steer" },
         );
-      }, 50);
-    }
-  });
-
-  // ─── Stage-Specific Tool Restrictions ─────────────────
-  pi.on("tool_call", async (event, ctx) => {
-    const s = shared();
-    if (!s) return;
-    const engine = s.engine;
-    if (!engine || !engine.isActive() || engine.getType() !== "coding") return;
-
-    const stage = engine.getStage();
-    const readOnlyStages: string[] = [
-      "code_analysis", "requirement", "design", "testing",
-      "scope", "analyze", "report",
-    ];
-    if (!readOnlyStages.includes(stage)) return;
-
-    if (event.toolName === "write") {
-      const filePath = (event.input.path as string) || "";
-      if (!filePath.includes(".pi/craft/plans/")) {
-        return {
-          block: true,
-          reason: `当前只读阶段 [${stage}] 不允许使用 write。仅允许写入 .pi/craft/plans/ 目录下的计划文档。`,
-        };
-      }
-      return;
-    }
-
-    if (event.toolName === "edit") {
-      const filePath = (event.input.file_path || event.input.path || "") as string;
-      if (!filePath.includes(".pi/craft/plans/")) {
-        return {
-          block: true,
-          reason: `当前阶段 [${stage}] 为只读阶段，不允许 edit 修改代码。仅允许编辑 .pi/craft/plans/ 目录。`,
-        };
-      }
-      return;
-    }
-
-    if (event.toolName === "bash") {
-      const command = (event.input.command as string) || "";
-      const writesToPlans = command.includes(".pi/craft/plans/");
-      const writeOps = [">", " >>", "tee ", "dd ", "mkfifo"];
-      const hasWriteOp = writeOps.some((op) => command.includes(op));
-      if (hasWriteOp && !writesToPlans) {
-        return {
-          block: true,
-          reason: `当前只读阶段不允许写入代码文件。仅允许写入 .pi/craft/plans/ 目录。\n命令: ${command.slice(0, 80)}`,
-        };
-      }
-    }
-  });
-
-  // ─── /coding:develop Command ─────────────────────────
-  const VALID_STAGES = ["code_analysis", "requirement", "design", "testing", "implementation"];
-
-  pi.registerCommand("coding:develop", {
-    description: "Enter coding workflow mode. Optionally start from a specific stage: design, testing, implementation",
-    handler: async (args, ctx) => {
-      const s = shared();
-      if (!s) {
-        ctx.ui.notify("⚠️ Core extension not yet initialized. Try /reload or restart.", "error");
-        return;
-      }
-      s.statusline.bind(ctx);
-      ensureAgentsLoaded();
-
-      const stageArg = args?.trim().toLowerCase();
-      if (stageArg && !VALID_STAGES.includes(stageArg)) {
-        ctx.ui.notify(`Invalid stage: ${stageArg}. Valid: ${VALID_STAGES.join(", ")}`, "warning");
-        return;
-      }
-
-      pendingStage = (stageArg as WorkflowStage) || null;
-      codingInputMode = true;
-      s.statusline.updateWorkflow("coding", "idle");
-
-      const hint = pendingStage
-        ? `\n\n⚡ Will jump directly to **${pendingStage}** after slug generation.`
-        : "";
-      ctx.ui.notify(
-        `🔧 Coding workflow mode activated.${hint}\n\nPlease describe your requirement below. A topic-slug will be auto-generated.\n\nType any /command to exit, or /coding:abort to stop a running workflow.`,
-        "info",
-      );
-    },
-  });
-
-  // ─── Input Event — Capture requirement in coding mode ──
-  pi.on("input", async (event, ctx) => {
-    if (!codingInputMode) return { action: "continue" };
-
-    const s = shared();
-    if (!s) return { action: "continue" };
-    s.statusline.bind(ctx);
-
-    const text = event.text.trim();
-    if (text.startsWith("/")) {
-      codingInputMode = false;
-      pendingRequirement = null;
-      pendingStage = null;
-      s.statusline.updateWorkflow("", "idle");
-      ctx.ui.notify("Exited coding workflow mode.", "info");
-      return { action: "continue" };
-    }
-    if (!text) {
-      ctx.ui.notify("Please enter your requirement description.", "warning");
-      return { action: "handled" };
-    }
-
-    pendingRequirement = text;
-    codingInputMode = false;
-
-    ctx.ui.notify(
-      `📝 Captured requirement, generating topic-slug via LLM...\n   "${text.slice(0, 80)}${text.length > 80 ? "..." : ""}"`,
-      "info",
-    );
-
-    const slugPrompt = `Generate a concise English topic-slug (2-3 words, lowercase, hyphenated) for this development requirement. Use common tech abbreviations (e.g., auth, impl, mw, db, ws, k8s, i18n). Reply with ONLY the slug on a single line, nothing else.\n\nRequirement: ${text}`;
-    setTimeout(() => pi.sendUserMessage(slugPrompt), 0);
-    return { action: "handled" };
-  });
-
-  // ─── Agent End — Capture slug from LLM response ───────
-  pi.on("agent_end", async (event, ctx) => {
-    if (!pendingRequirement) return;
-
-    const s = shared();
-    if (!s) return;
-    s.statusline.bind(ctx);
-    ensureAgentsLoaded();
-
-    const requirement = pendingRequirement;
-    const targetStage = pendingStage ?? "code_analysis";
-    pendingRequirement = null;
-    pendingStage = null;
-
-    let slugText = "";
-    for (const msg of [...event.messages].reverse()) {
-      if (msg.role === "assistant") {
-        for (const part of msg.content) {
-          if (part.type === "text") slugText += part.text;
-        }
-        break;
-      }
-    }
-
-    const firstLine = slugText.split("\n")[0].trim();
-    const topicSlug = firstLine
-      .replace(/^[`'"]+|[`'"]+$/g, "")
-      .replace(/[^a-z0-9-]/g, "")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 40)
-      || generateTopicSlug(requirement);
-
-    ctx.ui.notify(
-      `✅ Slug generated: ${topicSlug}\n📝 Starting coding workflow at **${targetStage}**...`,
-      "info",
-    );
-
-    const engine = WorkflowEngine.create("coding", requirement, topicSlug, ctx.cwd);
-    engine.transition(targetStage as WorkflowStage);
-    setEngine(engine);
-    s.statusline.updateWorkflow("coding", "code_analysis");
-    pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-
-    await registerScenarioHandlers(ctx);
-    await startWorkflow(ctx, requirement);
-  });
-
-  // ─── /coding:review Command ───────────────────────────
-  const REVIEW_STAGES = ["scope", "analyze", "report"];
-
-  pi.registerCommand("coding:review", {
-    description: "Start code review workflow. Optionally jump to analyze or report stage.",
-    handler: async (args, ctx) => {
-      const s = shared();
-      if (!s) {
-        ctx.ui.notify("⚠️ Core extension not yet initialized. Try /reload or restart.", "error");
-        return;
-      }
-      s.statusline.bind(ctx);
-      ensureAgentsLoaded();
-
-      const parts = (args || "").trim().split(/\s+/);
-      let target = "";
-      let stageArg = "scope";
-
-      // Last word might be a stage name
-      if (parts.length > 0 && REVIEW_STAGES.includes(parts[parts.length - 1])) {
-        stageArg = parts.pop()!;
-        target = parts.join(" ");
-      } else {
-        target = parts.join(" ");
-      }
-
-      const scopeTarget = target || "current git diff (uncommitted changes)";
-      const engine = WorkflowEngine.create("coding", `review: ${scopeTarget}`, undefined, ctx.cwd);
-      engine.transition(stageArg as WorkflowStage);
-      setEngine(engine);
-      s.statusline.updateWorkflow("coding", stageArg as WorkflowStage);
-      pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-
-      await registerScenarioHandlers(ctx);
-      await startWorkflow(ctx, scopeTarget);
-    },
-  });
-
-  // ─── start_coding_workflow Tool ──────────────────────
-  // LLM can call this to auto-start the coding workflow
-  pi.registerTool({
-    name: "start_coding_workflow",
-    label: "Start Coding Workflow",
-    description: [
-      "Start the multi-stage coding workflow. Use when you need structured development for a complex feature.",
-      "Stages: code_analysis → requirement → design → testing → implementation",
-      "Optionally skip to a specific stage if analysis/design already done.",
-      "Available stages: code_analysis, requirement, design, testing, implementation",
-    ].join(" "),
-    parameters: Type.Object({
-      requirement: Type.String({ description: "What to build — a clear one-line description" }),
-      stage: Type.Optional(Type.String({ description: "Skip to this stage. Default: code_analysis" })),
-    }),
-
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const s = shared();
-      if (!s) {
-        return { content: [{ type: "text", text: "Core extension not initialized. Try /reload." }], details: {} };
-      }
-      s.statusline.bind(ctx);
-      ensureAgentsLoaded();
-
-      const req = (params as any).requirement as string;
-      const stageArg = ((params as any).stage as string)?.toLowerCase();
-      const targetStage = (VALID_STAGES.includes(stageArg) ? stageArg : "code_analysis") as WorkflowStage;
-      const topicSlug = generateTopicSlug(req);
-
-      const engine = WorkflowEngine.create("coding", req, topicSlug, ctx.cwd);
-      engine.transition(targetStage);
-      setEngine(engine);
-      s.statusline.updateWorkflow("coding", targetStage);
-      pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-
-      await registerScenarioHandlers(ctx);
-      await startWorkflow(ctx, req);
+      }, 0);
 
       return {
         content: [{
           type: "text",
-          text: `✅ Coding workflow started at **${targetStage}** (slug: ${topicSlug}).\n\nRequirement: ${req}`,
+          text: `✅ Workflow initialized.\n**Topic:** ${topic}\n**Plans:** ${plansDir}/`,
         }],
-        details: {},
+        details: { plansDir, topic },
       };
     },
   });
 
-  // ─── /coding:status ──────────────────────────────────
-  pi.registerCommand("coding:status", {
-    description: "Show current coding workflow status",
-    handler: async (_args, ctx) => {
-      const s = shared();
-      if (!s) return;
-      s.statusline.bind(ctx);
+  // ═══════════════════════════════════════════════════════════
+  // Tool: complete_stage
+  // ═══════════════════════════════════════════════════════════
+  pi.registerTool({
+    name: "complete_stage",
+    label: "Complete Stage",
+    description: "Verify output file, label session tree, persist metadata, auto-load next stage skill.",
+    parameters: Type.Object({
+      next_stage: Type.String({ description: "Next stage: requirement, design, testing, implementation, review, done" }),
+      output_file: Type.String({ description: "Relative path to the document produced" }),
+    }),
+    async execute(_id, params, _signal, _update, ctx) {
+      const { next_stage, output_file } = params as { next_stage: string; output_file: string };
 
-      const engine = engineRef();
-      if (!engine || !engine.isActive()) {
-        ctx.ui.notify("No active workflow. Use /coding:develop to start.", "info");
-      } else {
-        const ctx2 = engine.getContext();
-        const docs = engine.getDocumentPathForStage(engine.getStage());
-        ctx.ui.notify(
-          `Workflow: ${engine.getType()}/${engine.getStage()}\nTopic: ${ctx2.topicSlug}\nDocs: ${ctx2.plansDir}\nCurrent: ${docs ?? "N/A"}`,
-          "info",
+      // Gate
+      const gateErr = gateFile(path.resolve(ctx.cwd, output_file));
+      if (gateErr) {
+        return {
+          content: [{ type: "text", text: `⚠️ Gate failed — ${output_file}: ${gateErr}` }],
+          details: { blocked: true, reason: gateErr },
+        };
+      }
+
+      // Metadata
+      const currentMeta = getMeta(ctx);
+      const currentStage = currentMeta?.stage ?? "code-analysis";
+      const updatedMeta: WorkflowMeta = currentMeta
+        ? {
+            ...currentMeta,
+            stage: next_stage,
+            stages: [...currentMeta.stages, { stage: currentStage, completedAt: Date.now(), outputFile: output_file }],
+          }
+        : {
+            type: "coding", topic: "unknown", requirement: "", plansDir: path.dirname(path.resolve(ctx.cwd, output_file)),
+            stage: next_stage, startedAt: Date.now(), stages: [{ stage: "code-analysis", completedAt: Date.now(), outputFile: output_file }],
+          };
+      pi.appendEntry(CUSTOM_TYPE, updatedMeta);
+
+      // Session tree label
+      try {
+        const leafId = ctx.sessionManager.getLeafId();
+        if (leafId) pi.setLabel(leafId, next_stage === "done" ? "✅ workflow:done" : `📌 stage:${next_stage}`);
+      } catch { /* ignore */ }
+
+      // Notify
+      const notifyMsg = next_stage === "done"
+        ? "🎉 Workflow complete!"
+        : next_stage === "implementation"
+          ? "⚠️ Entering implementation — full write access"
+          : `✅ Stage complete → ${next_stage}`;
+      ctx.ui.notify(notifyMsg, next_stage === "done" ? "success" : "info");
+
+      // Done
+      if (next_stage === "done") {
+        // Clear all todo tasks
+        getState()?.resetTodo?.();
+        return {
+          content: [{
+            type: "text",
+            text: `🎉 Workflow complete!\n\nProduced:\n${updatedMeta.stages.map(s => `- ${s.outputFile}`).join("\n")}`,
+          }],
+          details: { next_stage: "done", stages: updatedMeta.stages },
+        };
+      }
+
+      // Auto-load next skill
+      setTimeout(() => {
+        pi.sendUserMessage(
+          `Load \`/skill:stage-${next_stage}\` and continue.\n\nPlans: ${updatedMeta.plansDir}\nRequirement: ${updatedMeta.requirement}`,
+          { deliverAs: "steer" },
         );
-      }
+      }, 0);
+
+      return {
+        content: [{ type: "text", text: `✅ Stage complete. Loading **${next_stage}**...` }],
+        details: { next_stage, output_file },
+      };
     },
   });
 
-  // ─── Resume Context Builder ───────────────────────────
-
-/** Build a rich context summary for workflow resume so the LLM
- *  doesn't need to re-read all documents from scratch. */
-function buildResumeContext(engine: WorkflowEngine): string {
-  const ctx = engine.getContext();
-  const currentStage = engine.getStage();
-  const stageHistory = engine.getState().stageHistory;
-
-  const lines: string[] = [];
-
-  // Topic and plans directory
-  lines.push(`**Topic:** ${ctx.topicSlug}`);
-  lines.push(`**Plans directory:** ${ctx.plansDir}`);
-  lines.push("");
-
-  // Completed stages
-  const completed = stageHistory.filter(s => s.exitedAt);
-  if (completed.length > 0) {
-    lines.push("**Completed stages:**");
-    for (const s of completed) {
-      const label = STAGE_LABELS[s.stage] ?? s.stage;
-      const docPath = engine.getDocumentPathForStage(s.stage);
-      lines.push(`- ✅ ${label}${docPath ? ` (${docPath.replace(ctx.plansDir + "/", "")})` : ""}`);
-    }
-    lines.push("");
-  }
-
-  // Current stage context
-  const currentLabel = STAGE_LABELS[currentStage] ?? currentStage;
-  lines.push(`**Current stage:** ${currentLabel}`);
-  lines.push("");
-
-  // Stage-specific context
-  switch (currentStage) {
-    case "code_analysis": {
-      if (ctx.codeAnalysis?.completed) {
-        lines.push(`Code analysis already completed: ${ctx.codeAnalysis.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.requirement?.raw) {
-        lines.push(`Requirement: ${ctx.requirement.raw}`);
-      }
-      break;
-    }
-    case "requirement": {
-      if (ctx.codeAnalysis?.documentPath) {
-        lines.push(`Code analysis: ${ctx.codeAnalysis.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.requirement?.raw) {
-        lines.push(`Original requirement: ${ctx.requirement.raw}`);
-        if (ctx.requirement.clarified) {
-          lines.push(`Clarified: ${ctx.requirement.clarified}`);
-        }
-      }
-      break;
-    }
-    case "design": {
-      if (ctx.requirement?.documentPath) {
-        lines.push(`Requirement doc: ${ctx.requirement.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.codeAnalysis?.documentPath) {
-        lines.push(`Code analysis: ${ctx.codeAnalysis.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      break;
-    }
-    case "testing": {
-      if (ctx.design?.documentPath) {
-        lines.push(`Design doc: ${ctx.design.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      break;
-    }
-    case "implementation": {
-      if (ctx.design?.documentPath) {
-        lines.push(`Design doc: ${ctx.design.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.testing?.documentPath) {
-        lines.push(`Testing plan: ${ctx.testing.documentPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.implementation?.tasksPath) {
-        lines.push(`Task breakdown: ${ctx.implementation.tasksPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.implementation?.todosPath) {
-        lines.push(`Todo list: ${ctx.implementation.todosPath.replace(ctx.plansDir + "/", "")}`);
-      }
-      if (ctx.implementation?.tasks && ctx.implementation.tasks.length > 0) {
-        const done = ctx.implementation.tasks.filter(t => t.status === "done").length;
-        lines.push(`Task progress: ${done}/${ctx.implementation.tasks.length} completed`);
-      }
-      break;
-    }
-  }
-
-  lines.push("");
-  lines.push("Continue the workflow from where you left off. Read any referenced documents as needed.");
-
-  return lines.join("\n");
-}
-  pi.registerCommand("coding:resume", {
-    description: "Resume an existing coding workflow",
-    handler: async (_args, ctx) => {
-      const s = shared();
-      if (!s) return;
-      s.statusline.bind(ctx);
-      ensureAgentsLoaded();
-
-      const engine = WorkflowEngine.restore(ctx);
-      if (!engine || !engine.isActive()) {
-        ctx.ui.notify("No active workflow to resume.", "info");
-        return;
-      }
-      if (engine.getType() !== "coding") {
-        ctx.ui.notify("Resume only supports coding workflows.", "warning");
-        return;
-      }
-
-      setEngine(engine);
-      s.statusline.updateWorkflow(engine.getType(), engine.getStage() as WorkflowStage);
-      await registerScenarioHandlers(ctx);
-
-      const stageName = STAGE_LABELS[engine.getStage()] ?? engine.getStage();
-      const contextSummary = buildResumeContext(engine);
-      const message = `Workflow resumed. You are in the **${stageName}** phase.
-
-${contextSummary}`;
-
-      ctx.ui.notify(`Resumed: coding/${stageName}`, "info");
-      setTimeout(() => pi.sendUserMessage(message), 0);
-    },
+  // ═══════════════════════════════════════════════════════════
+  // Compaction hook — preserve workflow context
+  // ═══════════════════════════════════════════════════════════
+  pi.on("session_before_compact", async (event, ctx) => {
+    const meta = getMeta(ctx);
+    if (!meta) return;
+    const stageSummary = meta.stages.length > 0
+      ? `Completed: ${meta.stages.map(s => s.stage).join(" → ")}`
+      : "No stages completed yet";
+    return {
+      compaction: {
+        summary: [
+          `[Coding Workflow — ${meta.topic}]`,
+          `Requirement: ${meta.requirement}`,
+          `Current stage: ${meta.stage}`,
+          `Plans: ${meta.plansDir}`,
+          stageSummary,
+          `To continue: /skill:stage-${meta.stage}`,
+        ].join("\n"),
+        firstKeptEntryId: event.preparation.firstKeptEntryId,
+        tokensBefore: event.preparation.tokensBefore,
+      },
+    };
   });
 
-  // ─── /coding:rollback ────────────────────────────────
-  pi.registerCommand("coding:rollback", {
-    description: "Rollback to a previous workflow stage. Use '/coding:rollback design' to jump directly to design.",
-    handler: async (args, ctx) => {
-      const s = shared();
-      if (!s) return;
-      s.statusline.bind(ctx);
-
-      const engine = engineRef();
-      if (!engine || !engine.isActive()) {
-        ctx.ui.notify("No active workflow to rollback.", "info");
-        return;
-      }
-
-      const stageArg = (args || "").trim().toLowerCase();
-      const validStages: WorkflowStage[] = ["code_analysis", "requirement", "design", "testing", "implementation"];
-      const targetStage = validStages.includes(stageArg as WorkflowStage) ? (stageArg as WorkflowStage) : undefined;
-
-      const prev = engine.rollback(targetStage);
-      if (prev) {
-        ctx.ui.notify(`Rolled back to: ${prev}`, "info");
-        s.statusline.updateWorkflow(engine.getType(), prev as WorkflowStage);
-        pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-      } else {
-        ctx.ui.notify("Cannot rollback to that stage.", "warning");
-      }
-    },
-  });
-
-  // ─── /coding:abort ───────────────────────────────────
-  pi.registerCommand("coding:abort", {
-    description: "Abort the current coding workflow",
-    handler: async (_args, ctx) => {
-      const s = shared();
-      if (!s) return;
-      s.statusline.bind(ctx);
-
-      const engine = engineRef();
-      if (!engine) {
-        ctx.ui.notify("No active workflow to abort.", "info");
-        return;
-      }
-      const ok = await ctx.ui.confirm("Abort workflow?", "All generated documents will be preserved.");
-      if (ok) {
-        engine.abort();
-        pi.appendEntry("craft-workflow-state", engine.toPersistenceEntry().data);
-        setEngine(null);
-        s.statusline.updateWorkflow("", "idle");
-        ctx.ui.notify("Workflow aborted. Documents preserved in .pi/craft/plans/", "info");
-      }
-    },
+  // ═══════════════════════════════════════════════════════════
+  // Session restore
+  // ═══════════════════════════════════════════════════════════
+  pi.on("session_start", async (_event, ctx) => {
+    const meta = getMeta(ctx);
+    if (!meta?.stage || meta.stage === "done") return;
+    const completed = meta.stages.length > 0
+      ? `\n**Completed:** ${meta.stages.map(s => s.stage).join(" → ")}`
+      : "";
+    setTimeout(() => {
+      pi.sendUserMessage(
+        `🔄 Workflow restored | Topic: ${meta.topic} | Stage: ${meta.stage}\nPlans: ${meta.plansDir}${completed}\n\nLoad \`/skill:stage-${meta.stage}\` to continue.`,
+        { deliverAs: "steer" },
+      );
+    }, 50);
   });
 }

@@ -14,53 +14,107 @@ description: pi-craft 开发约定 — TypeScript、pi 扩展 API、工作流模
 ## Project Structure
 ```
 src/
-├── index.ts              # Extension entry point (register commands, events, init)
+├── index.ts              # Core extension entry point
 ├── core/                 # Pure logic, no UI dependency
-│   ├── workflow-engine.ts
-│   ├── token-tracker.ts
+│   ├── config.ts         # CraftConfig type + getCraftConfig() (globalThis cached)
+│   ├── registry.ts       # Cross-extension singleton: initState() / getState()
+│   ├── workflow-types.ts # WorkflowMeta, WorkflowStage, CRAFT_WORKFLOW_TYPE
+│   ├── token-tracker.ts  # TokenTracker class + toExportJSON()
 │   ├── subagent-manager.ts
 │   ├── subagent-tool.ts
-│   └── cwd-guard.ts
+│   └── cwd-guard.ts      # checkCwdGuard() pure function
 ├── ui/                   # TUI rendering
 │   ├── statusline.ts
 │   ├── token-dashboard.ts
 │   └── components/
-├── capabilities/         # Optional capability extensions
-│   └── lsp/              # LSP diagnostics/hover/definition/references
-└── scenarios/            # Workflow scenarios and stages
-    ├── coding/
-    │   ├── index.ts      # Scenario extension entry (default export)
-    │   ├── develop/      # Develop sub-scenario
-    │   │   ├── index.ts  # Orchestration: register() + start()
-    │   │   └── stages/   # Per-stage config (prompt, tools, rules)
-    │   ├── review/       # Review sub-scenario
-    │   ├── agents/       # Subagent definitions (.md with YAML frontmatter)
-    │   └── prompts/      # Stage-specific prompt templates
-    ├── travel/index.ts   # Placeholder scenario
-    ├── stock/index.ts    # Placeholder scenario
-    └── knowledge/index.ts # Placeholder scenario
+├── capabilities/         # Optional, independently toggleable
+│   ├── lsp/              # LSP diagnostics
+│   ├── damage-control/   # YAML safety rules
+│   ├── workflow-suggester/
+│   ├── subagent-widget/
+│   ├── todo/             # Persistent task list + clear
+│   └── tilldone/         # Strict task discipline
+├── scenarios/
+│   └── coding/
+│       ├── index.ts      # Coding scenario: 2 tools (init_workflow, complete_stage)
+│       ├── agents/       # Subagent .md files
+│       └── prompts/      # Prompt templates
+└── skills/               # Stage skills (.md, LLM loaded on demand)
+    ├── coding-workflow/
+    ├── coding-stage-code-analysis/
+    ├── coding-stage-requirement/
+    ├── coding-stage-design/
+    ├── coding-stage-testing/
+    └── coding-stage-implementation/
 ```
+
+## Architecture Principles
+
+### Skills-driven workflow (not state machine)
+There is no `WorkflowEngine` class. Workflow progression is LLM-driven:
+- `init_workflow` → creates plans dir, auto-loads stage-1 skill
+- `complete_stage` → gates output, persists meta, auto-loads next skill
+- Stage instructions are `.md` skill files loaded on demand by LLM
+- Extension code only provides 2 tools + session hooks
+
+### Session entry ordering
+Always iterate session branch in **reverse** to get latest state:
+```typescript
+const branch = ctx.sessionManager.getBranch();
+for (let i = branch.length - 1; i >= 0; i--) {
+  if (branch[i].type === "custom" && branch[i].customType === TYPE) return branch[i].data;
+}
+```
+Reason: `appendEntry` adds to the end, so last match = current state.
+This applies to `getMeta()` (workflow) and `loadFromSession()` (todo).
 
 ## Module Rules
 
 ### core/ — Pure logic
 - No pi/UI imports. Only `node:*` and internal types.
-- Export classes (WorkflowEngine, TokenTracker) and pure functions (checkCwdGuard).
-- Define interfaces alongside classes (WorkflowState, SubagentConfig).
+- Export classes (TokenTracker, SubagentManager) and pure functions (checkCwdGuard).
+- Define interfaces alongside classes.
+- Config reader `getCraftConfig()` caches in `globalThis` for cross-extension sharing.
 
 ### ui/ — TUI rendering
 - Imports from `@earendil-works/pi-tui` (Text, Container, Markdown, Spacer).
 - Exports classes with `bind(ctx)` pattern for lazy context injection.
 - Uses `ctx.ui.theme` for color access, never hardcoded ANSI.
-- Status bar via `ctx.ui.setStatus(key, text)`; keys in `STATUS_KEYS` const.
+- Status bar via `ctx.ui.setStatus(key, text)`; widget via `ctx.ui.setWidget(key, lines)`.
 
-### scenarios/ — Workflow scenarios
-- Each scenario is a pi extension: `index.ts` exports `default function(pi: ExtensionAPI)`.
-- Sub-scenarios (develop, review) export `register(dc)` to set up event handlers and `start(dc, ...)` to kick off.
-- Stages export consts: `stage`, `label`, `readOnly`, `tools`, `documentSuffix`, `prompt`, plus `register()`.
-- Stage prompts use `PLANS_DIR` and `DOCUMENT_PATH` placeholders replaced at runtime via `buildStagePrompt()`.
-- State machine driven by `WorkflowEngine.transition()`, `[STAGE_COMPLETE]` detection in `agent_end`.
-- Config-gated via `isOn(config, "enableXxx")` / `isEnabled(config, "enableXxx")`.
+### capabilities/ — Independent extensions
+- Each capability is a separate extension entry in `package.json` → `pi.extensions`.
+- Toggled via `settings.json` → `craft.enableXxx`.
+- Default-on: `isOn(config, key)` → `config[key] !== false`.
+- Default-off: `isEnabled(config, key)` → `config[key] === true`.
+- Gated at extension entry: `if (!isOn(config, "enableXxx")) return;`.
+
+### scenarios/coding/ — Coding workflow
+- Two registered tools: `init_workflow`, `complete_stage`.
+- `getMeta(ctx)` → reads latest `CRAFT_WORKFLOW_TYPE` session entry.
+- `gateFile(path)` → rejects files < 80 bytes or < 2 substantial lines.
+- `session_before_compact` → injects workflow context summary.
+- `session_start` → restores interrupted workflow (skips `done` stage).
+- Calls `getState()?.resetTodo?.()` on workflow `done` to clean up todo list.
+
+## Registry Pattern
+
+```typescript
+// core/registry.ts
+export interface CraftState {
+  tracker: TokenTracker;
+  subagent: SubagentManager;
+  statusline: StatuslineManager;
+  parallelEnabled: boolean;
+  cwdGuardEnabled: boolean;
+  subagentEnabled: boolean;
+  resetTodo?: () => void;  // Registered by todo capability, called on workflow done
+}
+
+// Core extension: initState({ tracker, subagent, ... })
+// Todo capability: getState()?.resetTodo = () => { manager.clear(); ... }
+// Coding scenario: getState()?.resetTodo?.()
+```
 
 ## Extension Patterns
 
@@ -77,7 +131,7 @@ pi.on("event_name", async (event, ctx) => {
 ```typescript
 pi.registerCommand("name", {
   description: "...",
-  handler: async (args, ctx) => { /* ... */ },
+  handler: async (args, ctx) => { /* args is string | undefined */ },
 });
 ```
 
@@ -88,28 +142,52 @@ pi.registerTool({
   label: "Tool Label",
   description: "...",
   parameters: Type.Object({ /* typebox schema */ }),
-  async execute(toolCallId, params, signal, onUpdate, ctx) {
+  async execute(_id, params, _signal, _update, ctx) {
     return { content: [{ type: "text", text: "..." }], details: {} };
   },
 });
 ```
 
+### Auto-load next skill
+```typescript
+setTimeout(() => {
+  pi.sendUserMessage(
+    `Load \`/skill:stage-${name}\` and continue.`,
+    { deliverAs: "steer" },
+  );
+}, 0);
+```
+
 ### Persistence
 ```typescript
 pi.appendEntry("custom-type", data);  // Write to session
-// Restore in session_start: ctx.sessionManager.getBranch()
+// Restore: ctx.sessionManager.getBranch() — iterate in reverse
 ```
 
 ## Code Style
 - Use JSDoc `/** */` for public API, `//` for inline comments.
 - Section headers: `// ─── Section Name ──────────────────────────`
+- Separator headers: `// ════════════════ Section ─═══════════════`
 - Prefer `const` over `let`; `let` only when reassignment needed.
 - Type imports: `import type { ... }` for type-only imports.
 - Error handling: try/catch with `/* ignore */` comment for intentional ignores.
 - Use `setTimeout(() => pi.sendUserMessage(...), 0)` to defer after event handlers.
 - Config pattern: `config?.setting !== false` for default-on; `=== true` for default-off.
 
-## Testing
-- Test alongside implementation in the same task.
-- Verify with `npx tsc --noEmit` for type checking.
-- Never create a separate "add tests" task — tests are part of each implementation task.
+## Gating Pattern
+
+```typescript
+function gateFile(fullPath: string): string | null {
+  try {
+    const stat = fs.statSync(fullPath);
+    if (stat.size < 80) return `file is only ${stat.size} bytes`;
+    const head = fs.readFileSync(fullPath, "utf-8").slice(0, 200);
+    if (head.split("\n").filter(l => l.trim().length > 20).length < 2)
+      return "file appears to be a stub";
+    return null;
+  } catch (err: any) {
+    if (err.code === "ENOENT") return "file not found";
+    throw err;
+  }
+}
+```

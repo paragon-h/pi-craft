@@ -43,7 +43,6 @@ export default function (pi: ExtensionAPI) {
     tracker,
     subagent,
     statusline,
-    engine: null,
     parallelEnabled,
     cwdGuardEnabled,
     subagentEnabled,
@@ -96,18 +95,10 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // Restore workflow engine from persistence (statusline only — scenarios
-    // handle their own event re-registration in their own session_start).
-    const { WorkflowEngine } = await import("./core/workflow-engine");
-    const engine = WorkflowEngine.restore(ctx);
-    const state = getState();
-    if (state) state.engine = engine;
-
     // Delayed statusline update for TUI readiness
     // Use a self-calling closure to avoid stale ctx issues after session replacement
     const _statusline = statusline;
     const _tracker = tracker;
-    const _engine = engine;
     const _parallel = parallelEnabled;
     const _guard = cwdGuardEnabled;
     setTimeout(() => {
@@ -115,9 +106,6 @@ export default function (pi: ExtensionAPI) {
         _statusline.updateTokens(_tracker);
         _statusline.updateParallel(_parallel);
         _statusline.updateGuard(_guard);
-        if (_engine && _engine.isActive()) {
-          _statusline.updateWorkflow(_engine.getType(), _engine.getStage());
-        }
       } catch { /* ctx may be stale after session replacement */ }
     }, 50);
   });
@@ -211,6 +199,22 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       statusline.bind(ctx);
 
+      // ── /tokens --export: write JSON to .pi/craft/ ──
+      if (args?.includes("--export")) {
+        const json = tracker.toExportJSON();
+        const datetime = new Date().toISOString().replace(/:/g, "-").replace(/\..+/, "");
+        const exportDir = path.join(ctx.cwd, ".pi", "craft");
+        fs.mkdirSync(exportDir, { recursive: true });
+        const filePath = path.join(exportDir, `tokens-${datetime}.json`);
+        fs.writeFileSync(filePath, JSON.stringify(json, null, 2), "utf-8");
+        if (ctx.hasUI) {
+          ctx.ui.notify(`📊 Tokens exported → ${filePath}`, "success");
+        } else {
+          ctx.ui.notify(`Tokens exported: ${filePath}`, "info");
+        }
+        return;
+      }
+
       if (!ctx.hasUI) {
         const total = tracker.getStats().total;
         ctx.ui.notify(
@@ -258,6 +262,7 @@ export default function (pi: ExtensionAPI) {
     description: "Show token summary",
     handler: async (ctx) => {
       statusline.bind(ctx);
+      // Quick token summary via hotkey — updated at turn_end
       const total = tracker.getStats().total;
       const throughput = tracker.getThroughput();
       ctx.ui.notify(

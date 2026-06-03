@@ -12,7 +12,6 @@
 import type { TokenTracker } from "./token-tracker";
 import type { SubagentManager } from "./subagent-manager";
 import type { StatuslineManager } from "../ui/statusline";
-import type { WorkflowEngine } from "./workflow-engine";
 
 const GLOBAL_KEY = "__pi_craft_state__";
 
@@ -20,10 +19,11 @@ export interface CraftState {
   tracker: TokenTracker;
   subagent: SubagentManager;
   statusline: StatuslineManager;
-  engine: WorkflowEngine | null;
   parallelEnabled: boolean;
   cwdGuardEnabled: boolean;
   subagentEnabled: boolean;
+  /** Called when workflow is done — clears all tasks */
+  resetTodo?: () => void;
 }
 
 /** Called once by Core extension during initialization */
