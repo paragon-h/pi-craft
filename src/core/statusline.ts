@@ -9,8 +9,8 @@
  */
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { formatCost, formatTokens, type TokenTracker } from "../core/token-tracker";
-import type { WorkflowStage } from "../core/workflow-types";
+import { formatCost, formatTokens, type TokenTracker } from "./token-tracker";
+import type { WorkflowStage } from "./workflow-types";
 
 // ─── 状态位定义 ────────────────────────────────────────────────
 

@@ -3,7 +3,7 @@
  */
 
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
-import type { TokenTracker, DailyStats } from "../core/token-tracker";
+import type { TokenTracker, DailyStats } from "./token-tracker";
 
 export interface DashboardTheme {
   fg: (color: string, text: string) => string;

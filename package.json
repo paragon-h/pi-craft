@@ -4,6 +4,9 @@
   "description": "Pi Craft - Automated development workflows with subagents, token tracking, and provider optimization",
   "keywords": ["pi-package"],
   "type": "module",
+  "scripts": {
+    "test": "npx tsx --test src/**/__tests__/*.test.ts"
+  },
   "pi": {
     "extensions": [
       "./src/index.ts",
@@ -12,10 +15,10 @@
       "./src/capabilities/workflow-suggester/index.ts",
       "./src/capabilities/subagent-widget/index.ts",
       "./src/capabilities/todo/index.ts",
-      "./src/capabilities/tilldone/index.ts",
+      "./src/scenarios/coding/tilldone/index.ts",
       "./src/scenarios/coding/index.ts"
     ],
-    "skills": ["./skills"],
+    "skills": ["./src/scenarios/coding/skills"],
     "video": "",
     "image": "",
     "config": {
@@ -53,6 +56,21 @@
         "type": "boolean",
         "default": false,
         "description": "Enable Tilldone — strict task discipline, blocks writes until tasks defined (opt-in)"
+      },
+      "enableLsp": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable LSP — multi-language server diagnostics"
+      },
+      "enableDamageControl": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable Damage Control — YAML safety rules engine"
+      },
+      "enableCoding": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable Coding Scenario — structured development workflow"
       },
       "damageControl": {
         "type": "object",

@@ -17,6 +17,16 @@ export interface DamageControlConfig {
   promptMode?: "confirm" | "auto-deny" | "auto-allow";
 }
 
+export interface LspConfig {
+  /** Language server command overrides, keyed by server type.
+   *  Set to null or "" to disable a server. Default servers:
+   *  - typescript: typescript-language-server --stdio
+   *  - go: gopls
+   *  - rust: rust-analyzer
+   *  - python: pyright-langserver --stdio */
+  servers?: Record<string, string | null>;
+}
+
 export interface CraftConfig {
   // Core
   enableSubagent?: boolean;
@@ -35,6 +45,7 @@ export interface CraftConfig {
   enableTilldone?: boolean;  // default-off — strict, explicit opt-in
 
   // Capability-Specific Configs
+  lsp?: LspConfig;
   damageControl?: DamageControlConfig;
 }
 

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { getState } from "../../core/registry";
 import { CRAFT_WORKFLOW_TYPE } from "../../core/workflow-types";
+import { formatDate, gateFile } from "./utils.js";
 
 const CUSTOM_TYPE = CRAFT_WORKFLOW_TYPE;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,23 +47,6 @@ function getMeta(ctx: ExtensionContext): WorkflowMeta | null {
     if (e.type === "custom" && e.customType === CUSTOM_TYPE) return e.data as WorkflowMeta;
   }
   return null;
-}
-
-function formatDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function gateFile(fullPath: string): string | null {
-  try {
-    const stat = fs.statSync(fullPath);
-    if (stat.size < 80) return `file is only ${stat.size} bytes`;
-    const head = fs.readFileSync(fullPath, "utf-8").slice(0, 200);
-    if (head.split("\n").filter(l => l.trim().length > 20).length < 2) return "file appears to be a stub";
-    return null;
-  } catch (err: any) {
-    if (err.code === "ENOENT") return "file not found";
-    throw err;
-  }
 }
 
 // ─── Main ─────────────────────────────────────────────────

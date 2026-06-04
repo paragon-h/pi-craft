@@ -14,10 +14,10 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import type { SubagentManager, SubagentDetails, SingleResult } from "../core/subagent-manager.js";
-import { formatTokens, formatCost } from "../core/token-tracker.js";
-import type { TokenTracker } from "../core/token-tracker.js";
-import type { StatuslineManager } from "../ui/statusline.js";
+import type { SubagentManager, SubagentDetails, SingleResult } from "./subagent-manager.js";
+import { formatTokens, formatCost } from "./token-tracker.js";
+import type { TokenTracker } from "./token-tracker.js";
+import type { StatuslineManager } from "./statusline.js";
 
 // ─── 参数 Schema ───────────────────────────────────────────────
 

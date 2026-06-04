@@ -58,18 +58,13 @@ src/
         │                                  #   session_start: restore interrupted workflow
         ├── agents/                        # Built-in subagents (scout/architect/implementer/reviewer)
         └── prompts/                       # Prompt templates
-```
-
-### Skills Directory
-
-```
-skills/
-├── coding-workflow/SKILL.md              # Workflow orchestrator (when to use, stage pipeline)
-├── coding-stage-code-analysis/SKILL.md   # Phase 1: Analyze codebase structure
-├── coding-stage-requirement/SKILL.md     # Phase 2: Clarify requirements via Q&A
-├── coding-stage-design/SKILL.md          # Phase 3: Architecture & component design
-├── coding-stage-testing/SKILL.md         # Phase 4: Testing strategy & approval mode
-└── coding-stage-implementation/SKILL.md  # Phase 5: Code with task tracking
+        └── skills/                        # Stage skills loaded on demand
+            ├── coding-workflow/SKILL.md
+            ├── coding-stage-code-analysis/SKILL.md
+            ├── coding-stage-requirement/SKILL.md
+            ├── coding-stage-design/SKILL.md
+            ├── coding-stage-testing/SKILL.md
+            └── coding-stage-implementation/SKILL.md
 ```
 
 ### Extension Responsibilities
