@@ -16,6 +16,7 @@ import {
   toLanguageId,
   type JsonRpcMessage,
   type JsonRpcResponse,
+  type JsonRpcNotification,
 } from "./json-rpc";
 
 // ─── Types ──────────────────────────────────────────────────────
@@ -52,6 +53,8 @@ interface ServerState {
   openFiles: Map<string, { version: number }>;
   pendingInit: Promise<void> | null;
   crashed: boolean;
+  /** Cache latest diagnostics per URI, updated by publishDiagnostics notifications */
+  diagnosticsCache: Map<string, Diagnostic[]>;
 }
 
 // ─── Pool ───────────────────────────────────────────────────────
@@ -144,20 +147,25 @@ export class LspServerPool {
     }
   }
 
-  /** Request diagnostics for a specific file */
+  /** Request diagnostics for a specific file.
+   *  Tries pull model first (textDocument/diagnostic), falls back to
+   *  cached publishDiagnostics notifications. */
   async getDiagnostics(server: ServerState, filePath: string, cwd: string): Promise<DiagnosticResult> {
     const uri = toUri(cwd, filePath);
-    const result = await this.sendRequest(server, "textDocument/diagnostic", {
-      textDocument: { uri },
-    });
 
-    // Response format depends on server; normalize it
-    const items = extractDiagnostics(result, uri);
-    return {
-      uri,
-      filePath,
-      diagnostics: items,
-    };
+    // Try pull-model diagnostic request first
+    try {
+      const result = await this.sendRequest(server, "textDocument/diagnostic", {
+        textDocument: { uri },
+      }, 5000); // shorter timeout for unsupported methods
+      const items = extractDiagnostics(result, uri);
+      return { uri, filePath, diagnostics: items };
+    } catch {
+      // Fall back to cached publishDiagnostics
+      await sleep(500); // give server time to publish
+      const items = server.diagnosticsCache.get(uri) ?? [];
+      return { uri, filePath, diagnostics: items };
+    }
   }
 
   /** Hover at a position */
@@ -228,6 +236,7 @@ export class LspServerPool {
       openFiles: new Map(),
       pendingInit: null,
       crashed: false,
+      diagnosticsCache: new Map(),
     };
 
     createStreamReader(proc, {
@@ -238,8 +247,14 @@ export class LspServerPool {
           // Response to our request
           requestTracker.handleResponse(msg as JsonRpcResponse);
         } else if ("method" in msg) {
-          // Notification — diagnostics publish, etc.
-          // We don't use publishDiagnostics since we poll with textDocument/diagnostic
+          // Notification — capture publishDiagnostics
+          const notif = msg as JsonRpcNotification;
+          if (notif.method === "textDocument/publishDiagnostics") {
+            const params = notif.params as { uri: string; diagnostics: Diagnostic[] } | undefined;
+            if (params?.uri) {
+              server.diagnosticsCache.set(params.uri, params.diagnostics ?? []);
+            }
+          }
         }
       },
       onError: (err) => {
@@ -283,8 +298,8 @@ export class LspServerPool {
     }));
   }
 
-  private async sendRequest<T>(server: ServerState, method: string, params: unknown): Promise<T> {
-    const { id, promise } = server.requestTracker.register<T>(this.timeout);
+  private async sendRequest<T>(server: ServerState, method: string, params: unknown, timeout?: number): Promise<T> {
+    const { id, promise } = server.requestTracker.register<T>(timeout ?? this.timeout);
     server.process.stdin!.write(encodeMessage({
       jsonrpc: "2.0", id, method, params,
     }));

@@ -2,6 +2,30 @@
 
 Pi Coding Agent 扩展 — 技能驱动开发工作流 + 可插拔 Capabilities。
 
+## Quick Start
+
+```bash
+# 安装
+pi install /path/to/pi-craft
+
+# 在项目目录启动 pi，直接描述你的需求：
+pi
+```
+
+然后输入：
+
+```
+帮我实现用户登录功能
+```
+
+Workflow Suggester 会自动检测开发意图并建议进入 coding workflow。也可以明确指定：
+
+```
+使用 coding workflow 帮我实现用户登录
+```
+
+LLM 会自动调用 `init_workflow` 创建 plans 目录并加载第一个阶段技能。
+
 ## 架构
 
 ```
@@ -31,14 +55,14 @@ pi-craft/
 │   └── scenarios/
 │       └── coding/                   # Coding 场景（2 个工具 + 会话持久化）
 │           ├── agents/               # 内置子代理 (scout/architect/implementer/reviewer)
-│           └── prompts/              # Prompt 模板
-└── skills/                           # 阶段技能（.md，LLM 按需加载）
-    ├── coding-workflow/              # 工作流编排器
-    ├── coding-stage-code-analysis/   # 代码分析
-    ├── coding-stage-requirement/     # 需求澄清
-    ├── coding-stage-design/          # 架构设计
-    ├── coding-stage-testing/         # 测试策略
-    └── coding-stage-implementation/  # 实现编码
+│           ├── prompts/              # Prompt 模板
+│           └── skills/               # 阶段技能（.md，LLM 按需加载）
+│               ├── coding-workflow/              # 工作流编排器
+│               ├── coding-stage-code-analysis/   # 代码分析
+│               ├── coding-stage-requirement/     # 需求澄清
+│               ├── coding-stage-design/          # 架构设计
+│               ├── coding-stage-testing/         # 测试策略
+│               └── coding-stage-implementation/  # 实现编码
 ```
 
 ## 工作流 — 技能驱动
@@ -160,6 +184,6 @@ pi -e .
 
 ### 添加新阶段
 
-1. 在 `skills/coding-stage-<name>/SKILL.md` 创建技能文件
-2. 在工作流编排器 `skills/coding-workflow/SKILL.md` 中注册 stage
+1. 在 `src/scenarios/coding/skills/coding-stage-<name>/SKILL.md` 创建技能文件
+2. 在工作流编排器 `src/scenarios/coding/skills/coding-workflow/SKILL.md` 中注册 stage
 3. 无需修改扩展代码

@@ -20,7 +20,7 @@ import { SubagentManager } from "./core/subagent-manager";
 import { registerSubagentTool } from "./core/subagent-tool";
 import { TokenTracker, setupTokenTracking } from "./core/token-tracker";
 import { checkCwdGuard } from "./core/cwd-guard";
-import { StatuslineManager } from "./ui/statusline";
+import { StatuslineManager } from "./core/statusline";
 import { initState, getState } from "./core/registry";
 import { getCraftConfig, isOn, isEnabled } from "./core/config";
 

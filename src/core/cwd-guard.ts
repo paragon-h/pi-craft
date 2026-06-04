@@ -59,11 +59,13 @@ export function checkCwdGuard(
     const command = (input.command as string) || "";
 
     // 只检查写入类命令（mkdir/touch/rm/cp/mv 等），读命令（ls/cat/grep）忽略
-    const writeCommands = /\b(mkdir|touch|rm\s|rmdir|cp\s|mv\s|ln\s|chmod|chown|npm\s+init|git\s+init|git\s+clone|go\s+mod\s+init)\b/;
+    // 注意：rm 可能后跟 -flags（如 rm -rf），末尾去掉 \b（rm -rf 中 - 不是 word char）
+    const writeCommands = /\b(mkdir|touch|rm(?:\s|$)|rmdir|cp(?:\s|$)|mv(?:\s|$)|ln(?:\s|$)|chmod|chown|npm\s+init|git\s+init|git\s+clone|go\s+mod\s+init)/;
     const isWriteCmd = writeCommands.test(command);
 
     // 检测 > / >> / tee 写入外部路径（始终检查）
-    const redirectMatch = command.match(/(?:>|>>|tee\s+)(?:-a\s+)?(\S+)/g);
+    // 排除 &1、&2 等 fd 重定向
+    const redirectMatch = command.match(/(?:>>|>|tee\s+)(?:-a\s+)?\s*([^&\s]\S*)/g);
     if (redirectMatch) {
       for (const m of redirectMatch) {
         const target = m.replace(/^(?:[>]+|tee\s+(?:-a\s+)?)\s*/, "").trim();

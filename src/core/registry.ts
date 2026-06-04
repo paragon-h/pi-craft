@@ -11,7 +11,7 @@
 
 import type { TokenTracker } from "./token-tracker";
 import type { SubagentManager } from "./subagent-manager";
-import type { StatuslineManager } from "../ui/statusline";
+import type { StatuslineManager } from "./statusline";
 
 const GLOBAL_KEY = "__pi_craft_state__";
 

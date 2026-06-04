@@ -5,7 +5,7 @@
  * 🔍 Analyzing → 📋 Requirement → 🎨 Design → 🧪 Testing → ⚡ Implement → ✅ Done
  */
 
-import type { WorkflowStage } from "../../core/workflow-types";
+import type { WorkflowStage } from "./workflow-types";
 
 interface StageDef {
   stage: WorkflowStage;
