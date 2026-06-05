@@ -224,7 +224,7 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const { createOverviewDashboard, createDetailDashboard } = await import("./ui/token-dashboard");
+      const { createOverviewDashboard, createDetailDashboard } = await import("./core/token-dashboard");
       const { matchesKey, Key } = await import("@earendil-works/pi-tui");
 
       await ctx.ui.custom((_tui, theme, _kb, done) => {
