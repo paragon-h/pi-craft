@@ -42,6 +42,21 @@
         "default": true,
         "description": "Inject craft-bootstrap meta-rule at session start — agent checks skills before any action"
       },
+      "enableBrainstorming": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable brainstorming skill — design before code, with HARD-GATE enforcement"
+      },
+      "enableWritingPlans": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable writing-plans skill — decomposing designs into bite-sized (2-5min) implementation tasks"
+      },
+      "enableTdd": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable test-driven-development skill — RED-GREEN-REFACTOR iron law enforcement"
+      },
       "enableWorkflowSuggester": {
         "type": "boolean",
         "default": true,

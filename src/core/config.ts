@@ -36,6 +36,11 @@ export interface CraftConfig {
   // Bootstrap — injects skill-checking meta-rule at session start (default-on)
   enableBootstrap?: boolean;
 
+  // Phase 2: Core workflow skills (all default-on)
+  enableBrainstorming?: boolean;
+  enableWritingPlans?: boolean;
+  enableTdd?: boolean;
+
   // Capabilities (all default-on unless noted)
   enableLsp?: boolean;
   enableTodo?: boolean;

@@ -29,20 +29,43 @@ Load this skill when the user says:
 
 ## Stage Pipeline
 
-| # | Skill | Purpose | Model |
-|---|-------|---------|-------|
+### Recommended Path (with pi-craft superpowers)
+
+| # | Skill | Purpose |
+|---|-------|---------|
+| 1 | `/skill:stage-code-analysis` | Analyze codebase structure & relevant code |
+| 2 | `/skill:brainstorming` | Clarify requirements, explore approaches, present design (HARD-GATE: no code before approval) |
+| 3 | `/skill:writing-plans` | Decompose design into bite-sized (2-5min) implementation tasks |
+| 4 | `/skill:subagent-driven-development` | Execute via fresh subagent per task + two-stage review |
+| 5 | `/skill:finishing-a-development-branch` | Verify, present merge/PR options, clean up |
+
+### Classic Path (original stage skills)
+
+| # | Skill | Purpose |
+|---|-------|---------|
 | 1 | `/skill:stage-code-analysis` | Analyze codebase structure & relevant code |
 | 2 | `/skill:stage-requirement` | Clarify requirements via structured Q&A |
 | 3 | `/skill:stage-design` | Architecture & component design |
 | 4 | `/skill:stage-testing` | Testing strategy & approval mode |
 | 5 | `/skill:stage-implementation` | Write code with task tracking |
 
+### Additional Skills
+
+- `/skill:test-driven-development` — RED-GREEN-REFACTOR iron law (use during implementation)
+- `/skill:systematic-debugging` — Root cause analysis before fixes (use for bugs)
+- `/skill:verification-before-completion` — Evidence before claims (use before declaring done)
+
+Both paths are valid. The recommended path adds design gating, precision planning, and review quality gates.
+The classic path uses the original independent stage skills without gates.
+
 ## Standalone Usage
 
 Each stage skill can be used independently without a full workflow:
 - `/skill:stage-code-analysis` — analyze any codebase
+- `/skill:brainstorming` — design exploration without committing to a workflow
 - `/skill:stage-design` — design architecture for an understood problem
 - `/skill:stage-implementation` — jump to coding with existing design
+- `/skill:test-driven-development` — enforce TDD on any coding task
 
 ## Navigation
 
