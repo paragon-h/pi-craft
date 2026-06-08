@@ -37,6 +37,11 @@
         "default": true,
         "description": "Restrict write/edit/bash write operations to the project working directory. Read operations are unrestricted."
       },
+      "enableBootstrap": {
+        "type": "boolean",
+        "default": true,
+        "description": "Inject craft-bootstrap meta-rule at session start — agent checks skills before any action"
+      },
       "enableWorkflowSuggester": {
         "type": "boolean",
         "default": true,

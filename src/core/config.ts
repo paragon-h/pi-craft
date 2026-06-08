@@ -33,6 +33,9 @@ export interface CraftConfig {
   enableParallelSubagent?: boolean;
   enableCwdGuard?: boolean;
 
+  // Bootstrap — injects skill-checking meta-rule at session start (default-on)
+  enableBootstrap?: boolean;
+
   // Capabilities (all default-on unless noted)
   enableLsp?: boolean;
   enableTodo?: boolean;

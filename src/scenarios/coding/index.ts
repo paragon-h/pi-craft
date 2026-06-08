@@ -13,11 +13,13 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getState } from "../../core/registry";
+import { getCraftConfig, isOn } from "../../core/config";
 import { CRAFT_WORKFLOW_TYPE } from "../../core/workflow-types";
 import { formatDate, gateFile } from "./utils.js";
 
 const CUSTOM_TYPE = CRAFT_WORKFLOW_TYPE;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SKILLS_DIR = path.join(__dirname, "skills");
 let agentsLoaded = false;
 
 // ─── Types ────────────────────────────────────────────────
@@ -220,9 +222,29 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ═══════════════════════════════════════════════════════════
-  // Session restore
+  // Session start — inject bootstrap + restore workflow
   // ═══════════════════════════════════════════════════════════
   pi.on("session_start", async (_event, ctx) => {
+    // 1. Inject craft-bootstrap meta-rule (if enabled)
+    const config = getCraftConfig(pi);
+    if (isOn(config, "enableBootstrap")) {
+      const bootstrapPath = path.join(SKILLS_DIR, "craft-bootstrap", "SKILL.md");
+      try {
+        if (fs.existsSync(bootstrapPath)) {
+          let bootstrapContent = fs.readFileSync(bootstrapPath, "utf-8");
+          // Strip YAML frontmatter (between --- markers) for clean injection
+          bootstrapContent = bootstrapContent.replace(/^---\n[\s\S]*?\n---\n/, "");
+          setTimeout(() => {
+            pi.sendUserMessage(bootstrapContent, {
+              deliverAs: "steer",
+              label: "craft-bootstrap",
+            });
+          }, 0);
+        }
+      } catch { /* bootstrap injection is best-effort */ }
+    }
+
+    // 2. Restore interrupted workflow
     const meta = getMeta(ctx);
     if (!meta?.stage || meta.stage === "done") return;
     const completed = meta.stages.length > 0
