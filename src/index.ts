@@ -77,20 +77,12 @@ export default function (pi: ExtensionAPI) {
       tracker.setModelProvider(ctx.model.id, ctx.model.provider);
     }
 
-    // Restore token data
+    // Restore token data from previous sessions
     const branchEntries = ctx.sessionManager.getBranch();
     for (const entry of branchEntries) {
       if (entry.type === "custom" && entry.customType === TokenTracker.getCustomType()) {
         const restored = TokenTracker.fromPersistenceData(entry.data);
-        for (const snap of restored.getStats().history) {
-          tracker.recordUsage(snap.model, snap.provider, {
-            input: snap.input,
-            output: snap.output,
-            cacheRead: snap.cacheRead,
-            cacheWrite: snap.cacheWrite,
-            cost: snap.cost,
-          });
-        }
+        tracker.restoreFrom(restored);
         break;
       }
     }

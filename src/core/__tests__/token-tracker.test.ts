@@ -473,6 +473,51 @@ describe("TokenTracker — persistence", () => {
     assert.equal(daily.length, 1);
   });
 
+  it("restoreFrom copies all aggregated stats (byModel, byProvider, total, dailyStats, sessionCount)", () => {
+    const original = new TokenTracker();
+    original.recordUsage("claude", "anthropic", { input: 1000, output: 200, cost: 0.015 });
+    original.recordUsage("gpt-4o", "openai", { input: 500, output: 100, cost: 0.01 });
+    original.recordSessionStart();
+    original.recordSessionStart();
+
+    // Persist and restore as fromPersistenceData would
+    const data = original.toPersistenceData();
+    const restored = TokenTracker.fromPersistenceData(data);
+
+    // Apply restoreFrom to a fresh tracker (simulating session_start)
+    const fresh = new TokenTracker();
+    fresh.restoreFrom(restored);
+
+    // Aggregated stats should be fully restored
+    assert.equal(fresh.getStats().total.input, 1500);
+    assert.equal(fresh.getStats().total.turns, 2);
+    assert.equal(fresh.getSessionCount(), 2);
+
+    const models = fresh.getModelStats();
+    assert.equal(models.length, 2);
+    const claude = models.find(m => m.model === "claude")!;
+    assert.equal(claude.stats.input, 1000);
+    assert.equal(claude.stats.cost, 0.015);
+
+    assert.equal(fresh.getDailyStatsList().length, 1);
+  });
+
+  it("restoreFrom does not restore subagent tokens", () => {
+    const original = new TokenTracker();
+    original.recordUsage("m1", "p1", { input: 100 });
+    original.recordSubagentUsage("scout", { input: 50, output: 10, cacheRead: 0, cacheWrite: 0, cost: 0.001 });
+
+    const data = original.toPersistenceData();
+    const restored = TokenTracker.fromPersistenceData(data);
+    const fresh = new TokenTracker();
+    fresh.restoreFrom(restored);
+
+    // Main agent data restored
+    assert.equal(fresh.getStats().total.input, 100);
+    // Subagent data NOT restored
+    assert.equal(fresh.getSubagentTokens().turns, 0);
+  });
+
   it("handles empty/undefined persistence data", () => {
     const tracker = TokenTracker.fromPersistenceData(null);
     assert.equal(tracker.getStats().total.turns, 0);

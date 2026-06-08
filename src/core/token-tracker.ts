@@ -121,6 +121,21 @@ export class TokenTracker {
     };
   }
 
+  // ── 从持久化数据恢复 ─────────────
+
+  /** 用已恢复的 Tracker 数据覆盖当前实例（跨 session 恢复用） */
+  restoreFrom(other: TokenTracker): void {
+    this.stats.byModel = other.stats.byModel;
+    this.stats.byProvider = other.stats.byProvider;
+    this.stats.total = other.stats.total;
+    this.stats.history = other.stats.history;
+    this.dailyStats = other.dailyStats;
+    this.sessionCount = other.sessionCount;
+    // subagentTokens / subagentDetails 不持久化，不恢复
+    // turnIndex 不恢复（从当前 session 继续计数）
+    // modelProviders 不恢复（session_start 时 model_select 重新设置）
+  }
+
   // ─── 数据采集 ──────────────────────────────────────────
 
   recordUsage(
