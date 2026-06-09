@@ -57,6 +57,11 @@
         "default": true,
         "description": "Enable test-driven-development skill — RED-GREEN-REFACTOR iron law enforcement"
       },
+      "enableSubagentReview": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable two-stage subagent review (spec compliance + code quality) per implementation task"
+      },
       "enableWorkflowSuggester": {
         "type": "boolean",
         "default": true,

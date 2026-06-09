@@ -41,6 +41,9 @@ export interface CraftConfig {
   enableWritingPlans?: boolean;
   enableTdd?: boolean;
 
+  // Phase 3: Subagent review (default-on)
+  enableSubagentReview?: boolean;
+
   // Capabilities (all default-on unless noted)
   enableLsp?: boolean;
   enableTodo?: boolean;
