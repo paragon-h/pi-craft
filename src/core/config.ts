@@ -44,6 +44,11 @@ export interface CraftConfig {
   // Phase 3: Subagent review (default-on)
   enableSubagentReview?: boolean;
 
+  // Phase 4: Utility skills (all default-on)
+  enableSystematicDebugging?: boolean;
+  enableVerification?: boolean;
+  enableFinishingBranch?: boolean;
+
   // Capabilities (all default-on unless noted)
   enableLsp?: boolean;
   enableTodo?: boolean;

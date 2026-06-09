@@ -62,6 +62,21 @@
         "default": true,
         "description": "Enable two-stage subagent review (spec compliance + code quality) per implementation task"
       },
+      "enableSystematicDebugging": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable systematic-debugging skill — 4-phase root cause analysis before any fix"
+      },
+      "enableVerification": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable verification-before-completion skill — evidence gate before claiming success"
+      },
+      "enableFinishingBranch": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable finishing-a-development-branch skill — structured merge/PR/cleanup workflow"
+      },
       "enableWorkflowSuggester": {
         "type": "boolean",
         "default": true,

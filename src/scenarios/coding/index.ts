@@ -205,6 +205,19 @@ export default function (pi: ExtensionAPI) {
     const stageSummary = meta.stages.length > 0
       ? `Completed: ${meta.stages.map(s => s.stage).join(" → ")}`
       : "No stages completed yet";
+
+    // Preserve stage-specific gates across compaction
+    const gateMap: Record<string, string> = {
+      "code-analysis": "",
+      "brainstorming": "⚠️ HARD-GATE ACTIVE: 设计未批准，禁止写代码",
+      "requirement": "",
+      "design": "",
+      "testing": "",
+      "implementation": "⚠️ Full write access — follow TDD",
+      "plans": "",
+    };
+    const gateHint = gateMap[meta.stage] || "";
+
     return {
       compaction: {
         summary: [
@@ -213,8 +226,9 @@ export default function (pi: ExtensionAPI) {
           `Current stage: ${meta.stage}`,
           `Plans: ${meta.plansDir}`,
           stageSummary,
+          gateHint,
           `To continue: /skill:stage-${meta.stage}`,
-        ].join("\n"),
+        ].filter(Boolean).join("\n"),
         firstKeptEntryId: event.preparation.firstKeptEntryId,
         tokensBefore: event.preparation.tokensBefore,
       },
