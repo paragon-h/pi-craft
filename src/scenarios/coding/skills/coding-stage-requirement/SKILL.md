@@ -1,6 +1,6 @@
 ---
 name: stage-requirement
-description: Clarify software requirements through structured Q&A. Use when the user has a feature idea but needs help refining it, or when they say "help me think through what this should do". For full feature development, use coding-workflow instead.
+description: Clarify software requirements through structured Q&A. Use when the user has a feature idea but needs help refining it. For full feature development, use brainstorming from coding-workflow instead.
 disable-model-invocation: true
 ---
 

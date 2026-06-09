@@ -58,8 +58,16 @@ src/
         │                                  #   session_start: restore interrupted workflow
         ├── agents/                        # Built-in subagents (scout/architect/implementer/reviewer)
         └── prompts/                       # Prompt templates
-        └── skills/                        # Stage skills loaded on demand
+        └── skills/                        # Stage skills + superpowers integration
+            ├── craft-bootstrap/SKILL.md        # Injected at session_start — meta-rule
             ├── coding-workflow/SKILL.md
+            ├── brainstorming/SKILL.md          # Design before code (HARD-GATE)
+            ├── writing-plans/SKILL.md          # Bite-sized task decomposition
+            ├── test-driven-development/SKILL.md # RED-GREEN-REFACTOR iron law
+            ├── subagent-driven-development/SKILL.md # Two-stage review per task
+            ├── systematic-debugging/SKILL.md   # Root cause before fixes
+            ├── verification-before-completion/SKILL.md # Evidence gate
+            ├── finishing-a-development-branch/SKILL.md # Merge/PR workflow
             ├── coding-stage-code-analysis/SKILL.md
             ├── coding-stage-requirement/SKILL.md
             ├── coding-stage-design/SKILL.md
@@ -87,9 +95,10 @@ src/
 | `complete_stage` tool | Gates output file, persists metadata, labels session tree, auto-loads next skill |
 | Stage gating | Rejects files < 80 bytes or < 2 substantial lines (stub detection) |
 | Todo cleanup | Calls `resetTodo()` on workflow done — auto-clears all tasks |
-| Compaction hook | `session_before_compact` preserves workflow context summary |
+| Compaction hook | `session_before_compact` preserves workflow context + stage gates |
+| Bootstrap injection | `session_start` injects craft-bootstrap meta-rule (steer message) |
 | Session restore | `session_start` restores interrupted workflows (skips "done" stage) |
-| Built-in agents | Lazy-loads scout, architect, implementer, reviewer |
+| Built-in agents | Lazy-loads scout, architect, implementer, reviewer, spec-reviewer, code-quality-reviewer |
 
 ### Shared State (`src/core/registry.ts`)
 Core initializes managers and calls `initState()`. Scenarios and capabilities read via `getState()`.
@@ -118,11 +127,46 @@ to get the latest matching entry. Appending always adds to the end, so the last 
 `complete_stage` validates output files before accepting them — blocks stub files to prevent
 workflow corruption from incomplete AI outputs.
 
+### Superpowers Integration
+pi-craft includes behavioral discipline skills adapted from [superpowers](https://github.com/obra/superpowers).
+The `craft-bootstrap` skill is injected as a steer message at session start, establishing the meta-rule:
+"check for applicable pi-craft skills before any action." The LLM then self-triggers relevant skills.
+
+**Dual skill paths:**
+- **Recommended:** `brainstorming → writing-plans → subagent-driven-development (+ TDD) → finishing-branch`
+- **Classic:** `stage-code-analysis → stage-requirement → stage-design → stage-testing → stage-implementation`
+
+Both paths coexist. Old stage skills remain available for standalone use.
+
+**Skill discipline levels:**
+- **IRON LAW:** test-driven-development, systematic-debugging, verification-before-completion (no exceptions)
+- **HARD-GATE:** brainstorming (design approval required before any code)
+- **Red Flags:** All skills include anti-rationalization tables
+
+**Compaction survival:** Stage-specific gate hints (e.g., "⚠️ HARD-GATE ACTIVE") are preserved
+in compaction summaries via `session_before_compact`. ~20 tok vs ~1500 for full skill reload.
+
 ## Config
 In `settings.json` under `craft`:
+
+**Core:**
 - `enableSubagent` (default: true) — Subagent master switch
 - `enableParallelSubagent` (default: false) — Spawn isolated pi processes for parallel execution
 - `enableCwdGuard` (default: true) — Restrict write/edit/bash-write to project working directory
+- `enableBootstrap` (default: true) — Inject craft-bootstrap meta-rule at session start
+
+**Workflow Skills:**
+- `enableBrainstorming` (default: true) — Design before code with HARD-GATE
+- `enableWritingPlans` (default: true) — Bite-sized task decomposition
+- `enableTdd` (default: true) — RED-GREEN-REFACTOR iron law
+- `enableSubagentReview` (default: true) — Two-stage review per implementation task
+
+**Utility Skills:**
+- `enableSystematicDebugging` (default: true) — 4-phase root cause analysis
+- `enableVerification` (default: true) — Evidence gate before claiming success
+- `enableFinishingBranch` (default: true) — Structured merge/PR workflow
+
+**Capabilities:**
 - `enableLsp` (default: true) — Multi-language server diagnostics
 - `enableDamageControl` (default: true) — YAML safety rules engine
 - `enableWorkflowSuggester` (default: true) — Proactive workflow suggestions (CN/EN)
