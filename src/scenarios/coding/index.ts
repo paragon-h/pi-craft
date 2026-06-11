@@ -21,6 +21,7 @@ const CUSTOM_TYPE = CRAFT_WORKFLOW_TYPE;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = path.join(__dirname, "skills");
 let agentsLoaded = false;
+let hasInitialized = false;
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -239,6 +240,11 @@ export default function (pi: ExtensionAPI) {
   // Session start — inject bootstrap + restore workflow
   // ═══════════════════════════════════════════════════════════
   pi.on("session_start", async (_event, ctx) => {
+    // Bootstrap injection + workflow restore are one-shot per process.
+    // On /reload the conversation already contains them — skip duplicates.
+    if (hasInitialized) return;
+    hasInitialized = true;
+
     // 1. Inject craft-bootstrap meta-rule (if enabled)
     const config = getCraftConfig(pi);
     if (isOn(config, "enableBootstrap")) {
