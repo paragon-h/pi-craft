@@ -440,60 +440,73 @@ export default function (pi: ExtensionAPI) {
       // Compute the session subdirectory for current cwd
       // cwd /Users/ekko/Workspace/p/code/pi-craft → --Users-ekko-Workspace-p-code-pi-craft--
       const encodedCwd = "--" + ctx.cwd.replace(/\//g, "-") + "--";
-      const sessionDir = ctx.sessionManager.getSessionDir().replace(/\/$/, "");
-      // sessionDir might already be the project subdirectory or the root sessions dir
-      let projectDir: string;
-      if (sessionDir.endsWith(encodedCwd)) {
-        projectDir = sessionDir;
-      } else {
-        projectDir = path.default.join(sessionDir, encodedCwd);
+      const sessionDir = ctx.sessionManager.getSessionDir();
+
+      // Try candidate paths (getSessionDir may return root or project-specific dir)
+      const candidates = [
+        sessionDir,                                    // maybe already the project dir
+        sessionDir.replace(/\/$/, ""),                // strip trailing slash
+        path.default.join(sessionDir, encodedCwd),     // root + encoded cwd
+      ];
+      let projectDir = "";
+      for (const c of candidates) {
+        if (fs.default.existsSync(c) && fs.default.statSync(c).isDirectory()) {
+          // Verify it contains .jsonl files
+          try {
+            const hasSessions = fs.default.readdirSync(c).some((f: string) => f.endsWith(".jsonl"));
+            if (hasSessions) {
+              projectDir = c;
+              break;
+            }
+          } catch { /* keep trying */ }
+        }
+      }
+
+      if (!projectDir) {
+        ctx.ui.notify("未找到当前项目的 session 目录", "error");
+        return;
       }
 
       const reports: SessionCostReport[] = [];
       const grandTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 
-      try {
-        const files = fs.default.readdirSync(projectDir).filter((f: string) => f.endsWith(".jsonl"));
+      const files = fs.default.readdirSync(projectDir).filter((f: string) => f.endsWith(".jsonl"));
 
-        for (const file of files) {
-          try {
-            const filePath = path.default.join(projectDir, file);
-            const raw = fs.default.readFileSync(filePath, "utf8");
-            const lines = raw.trim().split("\n");
-            const entries: Array<{ type: string; message?: any; name?: string }> = [];
-            for (const line of lines) {
-              try {
-                entries.push(JSON.parse(line));
-              } catch {
-                // skip malformed lines
-              }
+      for (const file of files) {
+        try {
+          const filePath = path.default.join(projectDir, file);
+          const raw = fs.default.readFileSync(filePath, "utf8");
+          const lines = raw.trim().split("\n");
+          const entries: Array<{ type: string; message?: any; name?: string }> = [];
+          for (const line of lines) {
+            try {
+              entries.push(JSON.parse(line));
+            } catch {
+              // skip malformed lines
             }
-
-            const cost = computeSessionCost(entries);
-            const sessionName = getSessionName(entries);
-
-            reports.push({
-              sessionPath: filePath,
-              sessionName,
-              totalInput: cost.totalInput,
-              totalOutput: cost.totalOutput,
-              totalCacheRead: cost.totalCacheRead,
-              totalCacheWrite: cost.totalCacheWrite,
-              totalCost: cost.totalCost,
-            });
-
-            grandTotal.input += cost.totalInput;
-            grandTotal.output += cost.totalOutput;
-            grandTotal.cacheRead += cost.totalCacheRead;
-            grandTotal.cacheWrite += cost.totalCacheWrite;
-            grandTotal.cost += cost.totalCost;
-          } catch {
-            // Skip sessions that can't be read
           }
+
+          const cost = computeSessionCost(entries);
+          const sessionName = getSessionName(entries);
+
+          reports.push({
+            sessionPath: filePath,
+            sessionName,
+            totalInput: cost.totalInput,
+            totalOutput: cost.totalOutput,
+            totalCacheRead: cost.totalCacheRead,
+            totalCacheWrite: cost.totalCacheWrite,
+            totalCost: cost.totalCost,
+          });
+
+          grandTotal.input += cost.totalInput;
+          grandTotal.output += cost.totalOutput;
+          grandTotal.cacheRead += cost.totalCacheRead;
+          grandTotal.cacheWrite += cost.totalCacheWrite;
+          grandTotal.cost += cost.totalCost;
+        } catch {
+          // Skip sessions that can't be read
         }
-      } catch {
-        ctx.ui.notify("无法访问 session 目录: " + projectDir, "error");
-        return;
       }
 
       // Sort by cost descending
