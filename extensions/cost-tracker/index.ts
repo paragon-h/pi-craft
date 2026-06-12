@@ -435,8 +435,6 @@ export default function (pi: ExtensionAPI) {
       const fs = await import("node:fs");
       const path = await import("node:path");
 
-      ctx.ui.notify("正在扫描 sessions...", "info");
-
       // Compute the session subdirectory for current cwd
       // cwd /Users/ekko/Workspace/p/code/pi-craft → --Users-ekko-Workspace-p-code-pi-craft--
       const encodedCwd = "--" + ctx.cwd.replace(/\//g, "-") + "--";
