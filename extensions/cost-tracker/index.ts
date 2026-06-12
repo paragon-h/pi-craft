@@ -440,7 +440,7 @@ export default function (pi: ExtensionAPI) {
       // Compute the session subdirectory for current cwd
       // cwd /Users/ekko/Workspace/p/code/pi-craft → --Users-ekko-Workspace-p-code-pi-craft--
       const encodedCwd = "--" + ctx.cwd.replace(/\//g, "-") + "--";
-      const sessionDir = ctx.sessionManager.getSessionDir();
+      const sessionDir = ctx.sessionManager.getSessionDir().replace(/\/$/, "");
       // sessionDir might already be the project subdirectory or the root sessions dir
       let projectDir: string;
       if (sessionDir.endsWith(encodedCwd)) {
