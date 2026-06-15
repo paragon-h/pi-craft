@@ -18,7 +18,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const skillPath = resolve(__dirname, "../../skills/using-pi-superpowers/SKILL.md");
+const skillPath = resolve(__dirname, "../skills/using-pi-superpowers/SKILL.md");
 const skillContent = readFileSync(skillPath, "utf-8");
 
 const bootstrapPrefix = "<EXTREMELY_IMPORTANT>\nYou have pi superpowers.\n\n";

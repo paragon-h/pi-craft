@@ -4,6 +4,7 @@
   "description": "通用扩展：todo、cost-tracker、progress 等",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
   }
 }
