@@ -19,6 +19,17 @@ export class FilesPanel implements SidebarPanel {
     this.fileChanges = fileChanges;
   }
 
+  /** Incrementally add/update a single file (for tool_execution_start). */
+  trackFile(path: string, type: "write" | "read"): void {
+    const existing = this.fileChanges.find((f) => f.path === path);
+    if (existing) {
+      // Upgrade read → write, never downgrade
+      if (type === "write") existing.type = "write";
+    } else {
+      this.fileChanges.push({ path, type });
+    }
+  }
+
   getItems(): PanelItem[] {
     return this.fileChanges.map((f, i) => ({
       id: `file-${i}`,

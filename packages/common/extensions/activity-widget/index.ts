@@ -70,10 +70,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_execution_start", async (event, ctx) => {
     if (!ctx.hasUI || !shell) return;
 
-    // File-related tools: update files panel
+    // File-related tools: incrementally track files
     const path = event.args?.path ?? event.args?.filePath;
     if (path && (event.toolName === "write" || event.toolName === "edit" || event.toolName === "read")) {
-      filesPanel.update(scanFileChanges(ctx.sessionManager.getBranch()));
+      const type = event.toolName === "read" ? "read" : "write";
+      filesPanel.trackFile(path, type);
       shell.refresh();
     }
   });
