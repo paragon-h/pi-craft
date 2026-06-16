@@ -18,6 +18,7 @@
       "./packages/knowledge-base/extensions"
     ],
     "skills": [
+      "./packages/common/skills",
       "./packages/coding/skills",
       "./packages/knowledge-base/skills"
     ]
