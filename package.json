@@ -1,0 +1,18 @@
+{
+  "name": "pi-superpowers",
+  "version": "1.0.0",
+  "description": "A complete software development methodology for Pi coding agent — brainstorm, plan, TDD, review, and ship with discipline.",
+  "keywords": ["pi-package", "skills", "development-workflow", "tdd", "superpowers"],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  }
+}
