@@ -1,6 +1,6 @@
 /** Cross-session project cost scanning — read .jsonl session files from disk. */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { computeSessionCost, getSessionName, type SessionEntries } from "./session";
 import type { SessionCostReport } from "./types";
@@ -9,7 +9,10 @@ import type { SessionCostReport } from "./types";
  * Find the project-specific session directory.
  * cwd /Users/foo/bar → encoded as --Users-foo-bar--
  */
-export function findProjectSessionDir(cwd: string, sessionDir: string): string | null {
+export async function findProjectSessionDir(
+  cwd: string,
+  sessionDir: string,
+): Promise<string | null> {
   const encodedCwd = "--" + cwd.replace(/\//g, "-") + "--";
   const candidates = [
     sessionDir,
@@ -18,9 +21,10 @@ export function findProjectSessionDir(cwd: string, sessionDir: string): string |
   ];
   for (const c of candidates) {
     try {
-      if (existsSync(c) && statSync(c).isDirectory()) {
-        const hasSessions = readdirSync(c).some((f) => f.endsWith(".jsonl"));
-        if (hasSessions) return c;
+      const s = await stat(c);
+      if (s.isDirectory()) {
+        const files = await readdir(c);
+        if (files.some((f) => f.endsWith(".jsonl"))) return c;
       }
     } catch {
       // keep trying
@@ -30,8 +34,8 @@ export function findProjectSessionDir(cwd: string, sessionDir: string): string |
 }
 
 /** Parse a .jsonl session file into entries. */
-export function parseSessionFile(filePath: string): SessionEntries {
-  const raw = readFileSync(filePath, "utf8");
+export async function parseSessionFile(filePath: string): Promise<SessionEntries> {
+  const raw = await readFile(filePath, "utf8");
   const entries: SessionEntries = [];
   for (const line of raw.trim().split("\n")) {
     try {
@@ -44,17 +48,20 @@ export function parseSessionFile(filePath: string): SessionEntries {
 }
 
 /** Scan all sessions in a project directory, return per-session reports + grand total. */
-export function scanProjectCost(
+export async function scanProjectCost(
   projectDir: string,
-): { reports: SessionCostReport[]; grandTotal: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number } } {
+): Promise<{
+  reports: SessionCostReport[];
+  grandTotal: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number };
+}> {
   const reports: SessionCostReport[] = [];
   const grandTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
 
-  const files = readdirSync(projectDir).filter((f) => f.endsWith(".jsonl"));
+  const files = (await readdir(projectDir)).filter((f) => f.endsWith(".jsonl"));
   for (const file of files) {
     try {
       const filePath = join(projectDir, file);
-      const entries = parseSessionFile(filePath);
+      const entries = await parseSessionFile(filePath);
       const cost = computeSessionCost(entries);
       const sessionName = getSessionName(entries);
 

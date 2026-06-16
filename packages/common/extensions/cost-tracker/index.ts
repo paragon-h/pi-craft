@@ -292,14 +292,14 @@ export default function (pi: ExtensionAPI) {
     description: "Show cost report across all sessions for current project",
     handler: async (_args, ctx) => {
       const sessionDir = ctx.sessionManager.getSessionDir();
-      const projectDir = findProjectSessionDir(ctx.cwd, sessionDir);
+      const projectDir = await findProjectSessionDir(ctx.cwd, sessionDir);
 
       if (!projectDir) {
         ctx.ui.notify("未找到当前项目的 session 目录", "error");
         return;
       }
 
-      const { reports, grandTotal } = scanProjectCost(projectDir);
+      const { reports, grandTotal } = await scanProjectCost(projectDir);
 
       if (ctx.mode !== "tui") {
         const lines: string[] = [];

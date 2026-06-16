@@ -8,9 +8,10 @@
  * - 🌿 Git 状态（实时 git status）
  */
 
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
-import { execSync } from "node:child_process";
 import type { FileChange, Task } from "../../shared/types";
 import { formatCost, formatTokens } from "../../shared/format";
 import { computeSessionCost, reconstructTodoState, scanFileChanges } from "../../shared/session";
@@ -42,13 +43,15 @@ function scanSession(entries: ReturnType<ExtensionContext["sessionManager"]["get
   };
 }
 
-function scanGit(cwd: string): { gitBranch: string | null; gitStatus: string | null; gitError: string | null } {
+const execAsync = promisify(exec);
+
+async function scanGit(cwd: string): Promise<{ gitBranch: string | null; gitStatus: string | null; gitError: string | null }> {
   try {
-    const branch = execSync("git branch --show-current", { cwd, encoding: "utf-8", timeout: 3000 }).trim();
-    const status = execSync("git status --porcelain", { cwd, encoding: "utf-8", timeout: 3000 }).trim();
+    const { stdout: branch } = await execAsync("git branch --show-current", { cwd, encoding: "utf-8", timeout: 3000 });
+    const { stdout: status } = await execAsync("git status --porcelain", { cwd, encoding: "utf-8", timeout: 3000 });
     return {
-      gitBranch: branch || null,
-      gitStatus: status || null,
+      gitBranch: branch.trim() || null,
+      gitStatus: status.trim() || null,
       gitError: null,
     };
   } catch (e: any) {
@@ -201,10 +204,10 @@ export default function (pi: ExtensionAPI) {
       const session = scanSession(entries);
 
       // Scan git and cross-session cost
-      const git = scanGit(ctx.cwd);
+      const git = await scanGit(ctx.cwd);
       const sessionDir = ctx.sessionManager.getSessionDir();
-      const projectDir = findProjectSessionDir(ctx.cwd, sessionDir);
-      const { reports } = projectDir ? scanProjectCost(projectDir) : { reports: [] };
+      const projectDir = await findProjectSessionDir(ctx.cwd, sessionDir);
+      const { reports } = projectDir ? await scanProjectCost(projectDir) : { reports: [] };
       const projectCost = reports.reduce((sum, r) => sum + r.totalCost, 0);
       const sessionCount = reports.length;
 
