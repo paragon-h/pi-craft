@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"]
+  },
+  "include": [
+    "packages/common/shared/**/*.ts",
+    "packages/common/extensions/**/*.ts",
+    "packages/coding/extensions/**/*.ts",
+    "packages/knowledge-base/extensions/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

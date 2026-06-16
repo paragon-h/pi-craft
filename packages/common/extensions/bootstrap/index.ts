@@ -16,6 +16,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+// @ts-expect-error — jiti supports import.meta at runtime; tsc flags it under CJS inference
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const skillPath = resolve(__dirname, "../../skills/using-pi-superpowers/SKILL.md");
