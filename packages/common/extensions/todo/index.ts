@@ -12,6 +12,8 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import type { Task, TodoDetails } from "../../shared/types";
+import { reconstructTodoState } from "../../shared/session";
 
 function deepCopy(tasks: Task[]): Task[] {
   return tasks.map((t) => ({ ...t }));
@@ -54,19 +56,6 @@ function formatTaskList(tasks: Task[]): string {
   }
 
   return lines.join("\n");
-}
-
-interface Task {
-  id: number;
-  title: string;
-  status: "queued" | "in_progress" | "done" | "cancelled";
-}
-
-interface TodoDetails {
-  action: string;
-  tasks: Task[];
-  nextId: number;
-  error?: string;
 }
 
 const TodoParams = Type.Object({
@@ -178,23 +167,9 @@ export default function (pi: ExtensionAPI) {
 
   const reconstructState = (ctx: ExtensionContext) => {
     const entries = ctx.sessionManager.getBranch();
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const entry = entries[i];
-      if (
-        entry.type === "message" &&
-        entry.message.role === "toolResult" &&
-        entry.message.toolName === "todo"
-      ) {
-        const details = entry.message.details as TodoDetails | undefined;
-        if (details) {
-          tasks = details.tasks.map((t) => ({ ...t }));
-          nextId = details.nextId;
-          return;
-        }
-      }
-    }
-    tasks = [];
-    nextId = 1;
+    const state = reconstructTodoState(entries);
+    tasks = state?.tasks ?? [];
+    nextId = state?.nextId ?? 1;
   };
 
   pi.on("session_start", async (_event, ctx) => reconstructState(ctx));

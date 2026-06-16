@@ -4,8 +4,11 @@ import type { FileChange, SessionCost, Task, TodoDetails, ToolUsage, TurnCost } 
 
 export type SessionEntries = Array<{ type: string; message?: any; name?: string }>;
 
-/** Reconstruct the latest todo task list from session branch entries. */
-export function reconstructTodoState(entries: SessionEntries): Task[] {
+/** Reconstruct the latest todo state (tasks + nextId) from session branch entries.
+ *  Returns null if no todo tool result is found. */
+export function reconstructTodoState(
+  entries: SessionEntries,
+): { tasks: Task[]; nextId: number } | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
     if (!entry) continue;
@@ -16,11 +19,14 @@ export function reconstructTodoState(entries: SessionEntries): Task[] {
     ) {
       const details = entry.message.details as TodoDetails | undefined;
       if (details && Array.isArray(details.tasks)) {
-        return details.tasks.map((t) => ({ ...t }));
+        return {
+          tasks: details.tasks.map((t) => ({ ...t })),
+          nextId: details.nextId,
+        };
       }
     }
   }
-  return [];
+  return null;
 }
 
 /** Scan file changes (write/edit/read) from assistant tool calls. */
