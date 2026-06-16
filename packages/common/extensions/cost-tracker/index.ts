@@ -9,152 +9,11 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { matchesKey, Text, truncateToWidth } from "@earendil-works/pi-tui";
-
-// ─── Data Types ────────────────────────────────────────────────────────
-
-interface Usage {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  totalTokens: number;
-  cost: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
-  };
-}
-
-interface TurnCost {
-  turnIndex: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: number;
-  toolNames: string[];
-}
-
-interface ToolUsage {
-  calls: number;
-  cost: number;
-}
-
-interface SessionCost {
-  totalInput: number;
-  totalOutput: number;
-  totalCacheRead: number;
-  totalCacheWrite: number;
-  totalCost: number;
-  turns: TurnCost[];
-  toolBreakdown: Record<string, ToolUsage>;
-}
-
-interface SessionCostReport {
-  sessionPath: string;
-  sessionName: string;
-  totalInput: number;
-  totalOutput: number;
-  totalCacheRead: number;
-  totalCacheWrite: number;
-  totalCost: number;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return String(n);
-}
-
-function formatCost(n: number): string {
-  return "$" + n.toFixed(2);
-}
-
-/** Extract per-turn and per-tool cost from session branch entries (on-demand scan). */
-function computeSessionCost(entries: Array<{ type: string; message?: any }>): SessionCost {
-  const turns: TurnCost[] = [];
-  const toolBreakdown: Record<string, ToolUsage> = {};
-  let totalInput = 0;
-  let totalOutput = 0;
-  let totalCacheRead = 0;
-  let totalCacheWrite = 0;
-  let totalCost = 0;
-  let turnIndex = 0;
-
-  for (const entry of entries) {
-    if (entry.type !== "message") continue;
-    const msg = entry.message;
-    if (!msg || msg.role !== "assistant") continue;
-
-    const usage: Usage | undefined = msg.usage;
-    if (!usage || typeof usage.input !== "number") continue;
-
-    turnIndex++;
-    totalInput += usage.input ?? 0;
-    totalOutput += usage.output ?? 0;
-    totalCacheRead += usage.cacheRead ?? 0;
-    totalCacheWrite += usage.cacheWrite ?? 0;
-    totalCost += usage.cost?.total ?? 0;
-
-    // Collect tool names from assistant content
-    const toolNames: string[] = [];
-    if (Array.isArray(msg.content)) {
-      for (const block of msg.content) {
-        if (block.type === "toolCall" && block.name) {
-          toolNames.push(block.name);
-        }
-      }
-    }
-
-    // Allocate cost among tools proportionally
-    const turnCost = usage.cost?.total ?? 0;
-    if (toolNames.length > 0) {
-      const perToolCost = turnCost / toolNames.length;
-      for (const name of toolNames) {
-        if (!toolBreakdown[name]) {
-          toolBreakdown[name] = { calls: 0, cost: 0 };
-        }
-        toolBreakdown[name].calls++;
-        toolBreakdown[name].cost += perToolCost;
-      }
-    }
-
-    turns.push({
-      turnIndex,
-      inputTokens: usage.input ?? 0,
-      outputTokens: usage.output ?? 0,
-      cacheRead: usage.cacheRead ?? 0,
-      cacheWrite: usage.cacheWrite ?? 0,
-      cost: turnCost,
-      toolNames,
-    });
-  }
-
-  return {
-    totalInput,
-    totalOutput,
-    totalCacheRead,
-    totalCacheWrite,
-    totalCost,
-    turns,
-    toolBreakdown,
-  };
-}
-
-function getSessionName(entries: Array<{ type: string; name?: string }>): string {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry.type === "session_info" && entry.name) {
-      return entry.name;
-    }
-  }
-  return "未命名";
-}
+import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import type { SessionCost, SessionCostReport } from "../../shared/types";
+import { formatCost, formatTokens } from "../../shared/format";
+import { computeSessionCost, getSessionName } from "../../shared/session";
+import { findProjectSessionDir, scanProjectCost } from "../../shared/project";
 
 // ─── TUI Components ─────────────────────────────────────────────────────
 
@@ -432,83 +291,15 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("cost-report", {
     description: "Show cost report across all sessions for current project",
     handler: async (_args, ctx) => {
-      const fs = await import("node:fs");
-      const path = await import("node:path");
-
-      // Compute the session subdirectory for current cwd
-      // cwd /Users/ekko/Workspace/p/code/pi-craft → --Users-ekko-Workspace-p-code-pi-craft--
-      const encodedCwd = "--" + ctx.cwd.replace(/\//g, "-") + "--";
       const sessionDir = ctx.sessionManager.getSessionDir();
-
-      // Try candidate paths (getSessionDir may return root or project-specific dir)
-      const candidates = [
-        sessionDir,                                    // maybe already the project dir
-        sessionDir.replace(/\/$/, ""),                // strip trailing slash
-        path.default.join(sessionDir, encodedCwd),     // root + encoded cwd
-      ];
-      let projectDir = "";
-      for (const c of candidates) {
-        if (fs.default.existsSync(c) && fs.default.statSync(c).isDirectory()) {
-          // Verify it contains .jsonl files
-          try {
-            const hasSessions = fs.default.readdirSync(c).some((f: string) => f.endsWith(".jsonl"));
-            if (hasSessions) {
-              projectDir = c;
-              break;
-            }
-          } catch { /* keep trying */ }
-        }
-      }
+      const projectDir = findProjectSessionDir(ctx.cwd, sessionDir);
 
       if (!projectDir) {
         ctx.ui.notify("未找到当前项目的 session 目录", "error");
         return;
       }
 
-      const reports: SessionCostReport[] = [];
-      const grandTotal = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
-
-      const files = fs.default.readdirSync(projectDir).filter((f: string) => f.endsWith(".jsonl"));
-
-      for (const file of files) {
-        try {
-          const filePath = path.default.join(projectDir, file);
-          const raw = fs.default.readFileSync(filePath, "utf8");
-          const lines = raw.trim().split("\n");
-          const entries: Array<{ type: string; message?: any; name?: string }> = [];
-          for (const line of lines) {
-            try {
-              entries.push(JSON.parse(line));
-            } catch {
-              // skip malformed lines
-            }
-          }
-
-          const cost = computeSessionCost(entries);
-          const sessionName = getSessionName(entries);
-
-          reports.push({
-            sessionPath: filePath,
-            sessionName,
-            totalInput: cost.totalInput,
-            totalOutput: cost.totalOutput,
-            totalCacheRead: cost.totalCacheRead,
-            totalCacheWrite: cost.totalCacheWrite,
-            totalCost: cost.totalCost,
-          });
-
-          grandTotal.input += cost.totalInput;
-          grandTotal.output += cost.totalOutput;
-          grandTotal.cacheRead += cost.totalCacheRead;
-          grandTotal.cacheWrite += cost.totalCacheWrite;
-          grandTotal.cost += cost.totalCost;
-        } catch {
-          // Skip sessions that can't be read
-        }
-      }
-
-      // Sort by cost descending
-      reports.sort((a, b) => b.totalCost - a.totalCost);
+      const { reports, grandTotal } = scanProjectCost(projectDir);
 
       if (ctx.mode !== "tui") {
         const lines: string[] = [];

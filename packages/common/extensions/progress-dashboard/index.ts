@@ -11,26 +11,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
-
-interface Task {
-  id: number;
-  title: string;
-  status: "queued" | "in_progress" | "done" | "cancelled";
-}
-
-interface TodoDetails {
-  action: string;
-  tasks: Task[];
-  nextId: number;
-  error?: string;
-}
-
-interface FileChange {
-  path: string;
-  type: "write" | "read";
-}
+import type { FileChange, Task } from "../../shared/types";
+import { formatCost, formatTokens } from "../../shared/format";
+import { computeSessionCost, reconstructTodoState, scanFileChanges } from "../../shared/session";
+import { findProjectSessionDir, scanProjectCost } from "../../shared/project";
 
 interface DashboardData {
   tasks: Task[];
@@ -46,60 +30,16 @@ interface DashboardData {
 }
 
 function scanSession(entries: ReturnType<ExtensionContext["sessionManager"]["getBranch"]>) {
-  // Reconstruct todo
-  let tasks: Task[] = [];
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (
-      entry.type === "message" &&
-      entry.message.role === "toolResult" &&
-      entry.message.toolName === "todo"
-    ) {
-      const details = entry.message.details as TodoDetails | undefined;
-      if (details && Array.isArray(details.tasks)) {
-        tasks = details.tasks.map((t: Task) => ({ ...t }));
-        break;
-      }
-    }
-  }
-
-  // Scan file changes
-  const fileMap = new Map<string, "write" | "read">();
-  for (const entry of entries) {
-    if (entry.type === "message" && entry.message.role === "assistant") {
-      const content = entry.message.content;
-      if (!Array.isArray(content)) continue;
-      for (const block of content) {
-        if (block.type !== "toolCall" || !block.name) continue;
-        const path = block.args?.path ?? block.args?.filePath;
-        if (!path) continue;
-        if (block.name === "write" || block.name === "edit") {
-          fileMap.set(path, "write");
-        } else if (block.name === "read" && !fileMap.has(path)) {
-          fileMap.set(path, "read");
-        }
-      }
-    }
-  }
-  const fileChanges: FileChange[] = [];
-  fileMap.forEach((type, path) => fileChanges.push({ path, type }));
-
-  // Session cost
-  let sessionCost = 0;
-  let sessionInput = 0;
-  let sessionOutput = 0;
-  for (const entry of entries) {
-    if (entry.type === "message" && entry.message.role === "assistant") {
-      const usage = entry.message.usage;
-      if (usage) {
-        sessionInput += usage.input ?? 0;
-        sessionOutput += usage.output ?? 0;
-        sessionCost += usage.cost?.total ?? 0;
-      }
-    }
-  }
-
-  return { tasks, fileChanges, sessionCost, sessionInput, sessionOutput };
+  const tasks = reconstructTodoState(entries)?.tasks ?? [];
+  const fileChanges = scanFileChanges(entries);
+  const cost = computeSessionCost(entries);
+  return {
+    tasks,
+    fileChanges,
+    sessionCost: cost.totalCost,
+    sessionInput: cost.totalInput,
+    sessionOutput: cost.totalOutput,
+  };
 }
 
 function scanGit(cwd: string): { gitBranch: string | null; gitStatus: string | null; gitError: string | null } {
@@ -120,59 +60,6 @@ function scanGit(cwd: string): { gitBranch: string | null; gitStatus: string | n
   }
 }
 
-function scanProjectCost(
-  ctx: ExtensionContext,
-): { projectCost: number; sessionCount: number } {
-  let projectCost = 0;
-  let sessionCount = 0;
-  try {
-    const encodedCwd = "--" + ctx.cwd.replace(/\//g, "-") + "--";
-    const sessionDir = ctx.sessionManager.getSessionDir();
-    const candidates = [
-      sessionDir,
-      sessionDir.replace(/\/$/, ""),
-      join(sessionDir, encodedCwd),
-    ];
-    let projectDir = "";
-    for (const c of candidates) {
-      try {
-        if (existsSync(c) && statSync(c).isDirectory()) {
-          const has = readdirSync(c).some((f: string) => f.endsWith(".jsonl"));
-          if (has) { projectDir = c; break; }
-        }
-      } catch { /* skip */ }
-    }
-    if (projectDir) {
-      const files = readdirSync(projectDir).filter((f: string) => f.endsWith(".jsonl"));
-      for (const file of files) {
-        try {
-          const raw = readFileSync(join(projectDir, file), "utf8");
-          for (const line of raw.trim().split("\n")) {
-            try {
-              const entry = JSON.parse(line);
-              const usage = entry?.message?.usage;
-              if (usage?.cost?.total) {
-                projectCost += usage.cost.total;
-              }
-            } catch { /* skip */ }
-          }
-          sessionCount++;
-        } catch { /* skip */ }
-      }
-    }
-  } catch { /* skip */ }
-  return { projectCost, sessionCount };
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return String(n);
-}
-
-function formatCost(n: number): string {
-  return "$" + n.toFixed(2);
-}
 
 class ProgressDashboardComponent {
   private data: DashboardData;
@@ -315,7 +202,11 @@ export default function (pi: ExtensionAPI) {
 
       // Scan git and cross-session cost
       const git = scanGit(ctx.cwd);
-      const { projectCost, sessionCount } = scanProjectCost(ctx);
+      const sessionDir = ctx.sessionManager.getSessionDir();
+      const projectDir = findProjectSessionDir(ctx.cwd, sessionDir);
+      const { reports } = projectDir ? scanProjectCost(projectDir) : { reports: [] };
+      const projectCost = reports.reduce((sum, r) => sum + r.totalCost, 0);
+      const sessionCount = reports.length;
 
       const data: DashboardData = {
         ...session,
