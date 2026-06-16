@@ -1,6 +1,39 @@
 # Pi Craft
 
-Pi coding agent 扩展包 — 开发方法论技能 + 效率工具集，灵感源自 [Jesse Vincent's Superpowers](https://github.com/obra/superpowers) 框架。
+Pi 多场景扩展包 — coding 开发方法论 + 知识库工具 + 通用效率工具集。
+
+## 包结构
+
+```
+pi-craft/
+├── packages/
+│   ├── common/          # 通用 extensions（todo、cost-tracker 等）
+│   ├── coding/          # coding 场景（开发方法论 skills）
+│   └── knowledge-base/  # 知识库场景（待开发）
+```
+
+## 场景安装
+
+根据需求选择安装：
+
+```bash
+# 仅 coding 场景（开发方法论 skills + 通用 extensions）
+pi install ./packages/coding
+
+# 仅知识库场景（通用 extensions，KB skills 待开发）
+pi install ./packages/knowledge-base
+
+# 混合使用（coding + 知识库）
+pi install ./packages/coding
+pi install ./packages/knowledge-base
+
+# 一键全装（根包，等于上面两个一起装）
+pi install .
+```
+
+### 旧版安装（向后兼容）
+
+`pi install /path/to/pi-craft` 仍然可用，根包聚合了所有内容。
 
 ## 包含什么
 
