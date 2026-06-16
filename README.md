@@ -7,7 +7,7 @@ Pi 多场景扩展包 — coding 开发方法论 + 知识库工具 + 通用效�
 ```
 pi-craft/
 ├── packages/
-│   ├── common/          # 通用 extensions（todo、cost-tracker 等）
+│   ├── common/          # 通用 extensions + skills（bootstrap、todo 等）
 │   ├── coding/          # coding 场景（开发方法论 skills）
 │   └── knowledge-base/  # 知识库场景（待开发）
 ```
@@ -96,13 +96,23 @@ pi install -l /path/to/pi-craft
 ### Manual Install
 
 **To a specific project:**
+
 ```bash
-cp -r skills/* /path/to/your-project/.pi/skills/
+# Coding 场景
+cp -r packages/common/skills/* packages/coding/skills/* /path/to/your-project/.pi/skills/
+cp -r packages/common/extensions/* /path/to/your-project/.pi/extensions/
+
+# 知识库场景（开发完成后）
+cp -r packages/common/skills/* packages/knowledge-base/skills/* /path/to/your-project/.pi/skills/
+cp -r packages/common/extensions/* /path/to/your-project/.pi/extensions/
 ```
 
 **Globally (all projects):**
+
 ```bash
-cp -r skills/* ~/.pi/agent/skills/
+# Coding 场景
+cp -r packages/common/skills/* packages/coding/skills/* ~/.pi/agent/skills/
+cp -r packages/common/extensions/* ~/.pi/agent/extensions/
 ```
 
 ## The Basic Workflow
