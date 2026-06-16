@@ -1,5 +1,5 @@
 /**
- * SidebarShell — the core sidebar component (widget mode).
+ * SidebarShell — the core widget component.
  *
  * Implements Component. Manages a list of registered panels and renders
  * them as a vertical stack above the editor. This is a read-only display

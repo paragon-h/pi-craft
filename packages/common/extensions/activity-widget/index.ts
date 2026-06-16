@@ -1,5 +1,5 @@
 /**
- * Activity Sidebar Extension — fixed sidebar widget above the editor.
+ * Activity Widget Extension — fixed widget above the editor.
  *
  * Panels (Phase 1-2):
  * - 📁 文件变更 — files changed in this session (write/edit/read)
@@ -45,7 +45,7 @@ export default function (pi: ExtensionAPI) {
     if (!ctx.hasUI || ctx.mode !== "tui") return;
     if (shell) return; // already created
 
-    ctx.ui.setWidget("activity-sidebar", (tui, theme) => {
+    ctx.ui.setWidget("activity-widget", (tui, theme) => {
       shell = new SidebarShell(tui, theme);
       shell.registerPanel(filesPanel);
       shell.registerPanel(tasksPanel);
