@@ -64,7 +64,8 @@ export class SidebarShell implements Component {
       const items = panel.getItems();
 
       // Panel header
-      if (!pushLine(th.fg("muted", th.bold(`${panel.title} (${items.length})`)))) break;
+      const summary = panel.getSummary?.() ?? String(items.length);
+      if (!pushLine(th.fg("muted", th.bold(`${panel.title} (${summary})`)))) break;
 
       // Panel items
       if (items.length === 0) {

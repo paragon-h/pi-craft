@@ -28,6 +28,12 @@ export class TasksPanel implements SidebarPanel {
     }));
   }
 
+  getSummary(): string {
+    const done = this.tasks.filter((t) => t.status === "done").length;
+    const total = this.tasks.filter((t) => t.status !== "cancelled").length;
+    return `${done}/${total}`;
+  }
+
   onAction?(_item: PanelItem): void {
     // Phase 4: could start/done a task
   }

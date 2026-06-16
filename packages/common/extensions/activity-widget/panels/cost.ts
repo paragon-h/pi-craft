@@ -61,6 +61,11 @@ export class CostPanel implements SidebarPanel {
     ];
   }
 
+  getSummary(): string {
+    if (!this.cost) return "-";
+    return formatCost(this.cost.totalCost);
+  }
+
   onAction?(_item: PanelItem): void {
     // Informational panel — no actions
   }

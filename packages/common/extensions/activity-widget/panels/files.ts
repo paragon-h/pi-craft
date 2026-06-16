@@ -28,6 +28,13 @@ export class FilesPanel implements SidebarPanel {
     }));
   }
 
+  getSummary(): string {
+    const writes = this.fileChanges.filter((f) => f.type === "write").length;
+    const reads = this.fileChanges.filter((f) => f.type === "read").length;
+    if (writes === 0 && reads === 0) return "0";
+    return reads > 0 ? `${writes}写 ${reads}读` : `${writes}写`;
+  }
+
   onAction?(_item: PanelItem): void {
     // Phase 4: will open diff view for the selected file
   }
