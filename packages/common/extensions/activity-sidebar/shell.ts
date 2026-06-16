@@ -63,8 +63,8 @@ export class SidebarShell implements Component, Focusable {
   // ── Component ──────────────────────────────────────────────────
 
   handleInput(data: string): void {
-    // Escape or Ctrl+G: hide sidebar
-    if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("g"))) {
+    // Escape: hide sidebar and release focus
+    if (matchesKey(data, Key.escape)) {
       this.onHide();
       return;
     }
@@ -197,7 +197,7 @@ export class SidebarShell implements Component, Focusable {
     // Footer
     const footerText = this.focused
       ? " ↑↓ 导航 | Tab 切换 | Enter 操作 | Esc 关闭 "
-      : " Ctrl+G 聚焦 ";
+      : " Ctrl+Shift+B 聚焦 ";
     const footerW = visibleWidth(footerText);
     const fLeft = Math.floor((innerW - footerW) / 2);
     const fRight = Math.max(0, innerW - footerW - fLeft);

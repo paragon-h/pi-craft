@@ -2,9 +2,9 @@
  * Activity Sidebar Extension — toggleable right-side sidebar with
  * extensible panels (files, tasks, cost, git — Phase 1: files only).
  *
- * Toggle: Ctrl+G
+ * Toggle: Ctrl+Shift+B
  * Navigation: ↑↓ to move, Tab/Shift+Tab to switch panels, Enter for action,
- *             Esc to release focus back to editor, Ctrl+G again to hide.
+ *             Esc to release focus back to editor, Ctrl+Shift+B again to hide.
  *
  * The sidebar is a persistent overlay that starts hidden. It uses
  * handle.setHidden() for visibility and handle.focus()/unfocus() for
@@ -88,7 +88,7 @@ export default function (pi: ExtensionAPI) {
 
   // ── Shortcut: Ctrl+G ───────────────────────────────────────────
 
-  pi.registerShortcut(Key.ctrl("g"), {
+  pi.registerShortcut(Key.ctrlShift("b"), {
     description: "Toggle activity sidebar",
     handler: async (_ctx) => {
       if (!overlayHandle) return;
