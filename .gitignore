@@ -1,0 +1,6 @@
+node_modules/
+*.tsbuildinfo
+.DS_Store
+
+# Pi craft working docs (design specs, implementation plans)
+.pi/craft/

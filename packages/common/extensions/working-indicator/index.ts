@@ -81,18 +81,7 @@ export default function (pi: ExtensionAPI) {
   let agentActive = false;
 
   // 更新状态栏
-  function updateStatus(ctx: { ui: { setStatus: (key: string, text: string) => void } }) {
-    if (!agentActive) {
-      ctx.ui.setStatus("working-indicator", "");
-      return;
-    }
-    if (activeToolCount > 0) {
-      // 工具执行中的状态由 tool_execution_start 单独设置
-      return;
-    }
-    // 思考中
-    ctx.ui.setStatus("working-indicator", "  💭 思考中...");
-  }
+  // (updateStatus removed — was dead code; status set inline in event handlers)
 
   pi.on("agent_start", async (_event, ctx) => {
     agentActive = true;
@@ -117,7 +106,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("working-indicator", `  ${icon} ${label}...`);
   });
 
-  pi.on("tool_execution_end", async (event, ctx) => {
+  pi.on("tool_execution_end", async (_event, ctx) => {
     activeToolCount = Math.max(0, activeToolCount - 1);
     if (activeToolCount === 0 && agentActive) {
       ctx.ui.setWorkingIndicator(getThinkingIndicator());

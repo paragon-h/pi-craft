@@ -10,19 +10,8 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-
-interface Task {
-  id: number;
-  title: string;
-  status: "queued" | "in_progress" | "done" | "cancelled";
-}
-
-interface TodoDetails {
-  action: string;
-  tasks: Task[];
-  nextId: number;
-  error?: string;
-}
+import type { Task } from "../../shared/types";
+import { computeSessionCost, reconstructTodoState, scanFileChanges } from "../../shared/session";
 
 interface WidgetState {
   tasks: Task[];
@@ -41,67 +30,17 @@ export default function (pi: ExtensionAPI) {
     totalOutput: 0,
   };
 
-  function reconstructTodo(entries: ReturnType<ExtensionContext["sessionManager"]["getBranch"]>) {
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const entry = entries[i];
-      if (
-        entry.type === "message" &&
-        entry.message.role === "toolResult" &&
-        entry.message.toolName === "todo"
-      ) {
-        const details = entry.message.details as TodoDetails | undefined;
-        if (details && Array.isArray(details.tasks)) {
-          state.tasks = details.tasks.map((t: Task) => ({ ...t }));
-          return;
-        }
-      }
-    }
-  }
-
-  function reconstructFileChanges(entries: ReturnType<ExtensionContext["sessionManager"]["getBranch"]>) {
-    state.fileChanges.clear();
-    for (const entry of entries) {
-      if (entry.type === "message" && entry.message.role === "assistant") {
-        const content = entry.message.content;
-        if (!Array.isArray(content)) continue;
-        for (const block of content) {
-          if (block.type !== "toolCall" || !block.name) continue;
-          const path = block.args?.path ?? block.args?.filePath;
-          if (!path) continue;
-          if (block.name === "write" || block.name === "edit") {
-            state.fileChanges.set(path, "write");
-          } else if (block.name === "read" && !state.fileChanges.has(path)) {
-            state.fileChanges.set(path, "read");
-          }
-        }
-      }
-    }
-  }
-
-  function reconstructCost(entries: ReturnType<ExtensionContext["sessionManager"]["getBranch"]>) {
-    state.totalCost = 0;
-    state.totalInput = 0;
-    state.totalOutput = 0;
-    for (const entry of entries) {
-      if (entry.type === "message" && entry.message.role === "assistant") {
-        const usage = entry.message.usage;
-        if (usage) {
-          state.totalInput += usage.input ?? 0;
-          state.totalOutput += usage.output ?? 0;
-          state.totalCost += usage.cost?.total ?? 0;
-        }
-      }
-    }
-  }
-
   function reconstructAll(ctx: ExtensionContext) {
     const entries = ctx.sessionManager.getBranch();
-    reconstructTodo(entries);
-    reconstructFileChanges(entries);
-    reconstructCost(entries);
+    state.tasks = reconstructTodoState(entries)?.tasks ?? [];
+    state.fileChanges = new Map(scanFileChanges(entries).map((f) => [f.path, f.type] as [string, "write" | "read"]));
+    const cost = computeSessionCost(entries);
+    state.totalCost = cost.totalCost;
+    state.totalInput = cost.totalInput;
+    state.totalOutput = cost.totalOutput;
   }
 
-  function renderWidget(_tui: unknown, theme: Record<string, (s: string) => string>) {
+  function renderWidget(_tui: unknown, theme: { fg: (color: string, text: string) => string }) {
     const segments: string[] = [];
 
     // Tasks: only show if there are active (not-done) tasks
@@ -169,7 +108,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("turn_end", async (event, ctx) => {
     if (!ctx.hasUI) return;
-    const usage = event.message?.usage;
+    const usage = (event.message as any)?.usage;
     if (usage) {
       state.totalInput += usage.input ?? 0;
       state.totalOutput += usage.output ?? 0;
