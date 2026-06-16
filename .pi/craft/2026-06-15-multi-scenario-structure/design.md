@@ -23,6 +23,8 @@ pi-craft/
 ├── packages/
 │   ├── common/                     # pi-craft-common
 │   │   ├── package.json
+│   │   ├── skills/                 # 所有场景共用
+│   │   │   └── using-pi-superpowers/
 │   │   └── extensions/             # 所有场景通用
 │   │       ├── bootstrap/
 │   │       ├── todo/
@@ -34,8 +36,7 @@ pi-craft/
 │   ├── coding/                     # pi-craft-coding
 │   │   ├── package.json
 │   │   ├── extensions/             # coding 专属扩展（初始为空，按需添加）
-│   │   └── skills/                 # 现有全部 skills 迁移至此
-│   │       ├── using-pi-superpowers/
+│   │   └── skills/                 # coding 专属 skills
 │   │       ├── brainstorming/
 │   │       ├── writing-plans/
 │   │       ├── executing-plans/
@@ -73,6 +74,7 @@ pi-craft/
       "./packages/knowledge-base/extensions"
     ],
     "skills": [
+      "./packages/common/skills",
       "./packages/coding/skills",
       "./packages/knowledge-base/skills"
     ]
@@ -86,10 +88,11 @@ pi-craft/
 {
   "name": "pi-craft-common",
   "version": "2.0.0",
-  "description": "通用扩展：todo、cost-tracker、progress 等",
+  "description": "通用扩展与技能：bootstrap、todo、cost-tracker、progress 等",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
   }
 }
 ```
@@ -104,7 +107,7 @@ pi-craft/
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["../common/extensions", "./extensions"],
-    "skills": ["./skills"]
+    "skills": ["../common/skills", "./skills"]
   }
 }
 ```
@@ -119,7 +122,7 @@ pi-craft/
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["../common/extensions", "./extensions"],
-    "skills": ["./skills"]
+    "skills": ["../common/skills", "./skills"]
   }
 }
 ```
@@ -164,4 +167,3 @@ pi-craft/
 ## 待定（后续设计）
 
 - knowledge-base 场景的具体 skills 和 extensions
-- 是否需要 shared skills（如 `using-pi-superpowers` 也可能用于 KB 场景）
