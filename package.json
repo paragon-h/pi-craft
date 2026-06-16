@@ -2,7 +2,15 @@
   "name": "pi-craft",
   "version": "2.0.0",
   "description": "Pi 扩展包 — coding + 知识库双场景，含通用工具集：头脑风暴、TDD、进度仪表盘、成本追踪、任务管理等。",
-  "keywords": ["pi-package", "pi-craft", "skills", "extensions", "development-workflow", "tdd", "superpowers"],
+  "keywords": [
+    "pi-package",
+    "pi-craft",
+    "skills",
+    "extensions",
+    "development-workflow",
+    "tdd",
+    "superpowers"
+  ],
   "author": "",
   "license": "MIT",
   "peerDependencies": {
@@ -22,5 +30,9 @@
       "./packages/coding/skills",
       "./packages/knowledge-base/skills"
     ]
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
   }
 }
