@@ -1,10 +1,11 @@
 /**
  * Activity Widget Extension — fixed widget above the editor.
  *
- * Panels (Phase 1-2):
+ * Panels:
  * - 📁 文件变更 — files changed in this session (write/edit/read)
- * - 📋 任务 — todo tasks with status icons
+ * - 📋 任务 — todo tasks with active/folded summary
  * - 💰 成本 — token usage and cost breakdown
+ * - 🌿 Git — branch name + working tree status
  *
  * Extensible: register more SidebarPanel implementations to add sections.
  * This is a read-only display widget (pi's widget API does not support
@@ -18,12 +19,14 @@ import { SidebarShell } from "./shell";
 import { FilesPanel } from "./panels/files";
 import { TasksPanel } from "./panels/tasks";
 import { CostPanel } from "./panels/cost";
+import { GitPanel } from "./panels/git";
 
 export default function (pi: ExtensionAPI) {
   let shell: SidebarShell | null = null;
   const filesPanel = new FilesPanel();
   const tasksPanel = new TasksPanel();
   const costPanel = new CostPanel();
+  const gitPanel = new GitPanel();
 
   function updateAllPanels(ctx: ExtensionContext): void {
     const entries = ctx.sessionManager.getBranch();
@@ -38,6 +41,9 @@ export default function (pi: ExtensionAPI) {
     // Cost
     costPanel.update(computeSessionCost(entries));
 
+    // Git (async — fire and forget, will re-render on completion)
+    gitPanel.refresh(ctx.cwd).then(() => { if (shell) shell.refresh(); });
+
     shell?.refresh();
   }
 
@@ -50,6 +56,7 @@ export default function (pi: ExtensionAPI) {
       shell.registerPanel(filesPanel);
       shell.registerPanel(tasksPanel);
       shell.registerPanel(costPanel);
+      shell.registerPanel(gitPanel);
       return shell;
     });
   }
@@ -87,6 +94,12 @@ export default function (pi: ExtensionAPI) {
       const todoState = reconstructTodoState(ctx.sessionManager.getBranch());
       tasksPanel.update(todoState?.tasks ?? []);
       shell.refresh();
+    }
+
+    // File mutating tools: refresh git panel
+    if (event.toolName === "write" || event.toolName === "edit") {
+      const s = shell;
+      gitPanel.refresh(ctx.cwd).then(() => s.refresh());
     }
   });
 
