@@ -20,12 +20,36 @@ export class TasksPanel implements SidebarPanel {
   }
 
   getItems(): PanelItem[] {
-    return this.tasks.map((t, i) => ({
+    const active = this.tasks.filter(
+      (t) => t.status === "in_progress" || t.status === "queued",
+    );
+    const doneCount = this.tasks.filter((t) => t.status === "done").length;
+    const cancelledCount = this.tasks.filter((t) => t.status === "cancelled").length;
+
+    const items: PanelItem[] = active.map((t, i) => ({
       id: `task-${i}`,
       icon: this.statusIcon(t.status),
       label: `#${t.id} ${t.title}`,
       action: undefined, // Phase 4: could toggle task status
     }));
+
+    // Fold completed/cancelled into summary lines
+    if (doneCount > 0) {
+      items.push({
+        id: "tasks-done",
+        icon: "✅",
+        label: `${doneCount} 个已完成`,
+      });
+    }
+    if (cancelledCount > 0) {
+      items.push({
+        id: "tasks-cancelled",
+        icon: "❌",
+        label: `${cancelledCount} 个已取消`,
+      });
+    }
+
+    return items;
   }
 
   getSummary(): string {
