@@ -71,7 +71,7 @@ Pi Craft 为你的 coding agent 注入一套严谨的开发流程：
 | `todo` | 任务追踪工具 + `/todos` 命令 |
 | `working-indicator` | 实时显示 Agent 状态（思考/执行工具） |
 | `cost-tracker` | Token 用量与成本面板（`/cost` + `/cost-report`） |
-| `progress-widget` | 常驻进度条（任务/文件/成本一行显示） |
+| `activity-widget` | 活动面板（文件变更/任务/成本多面板展示） |
 | `progress-dashboard` | 完整进度仪表盘（`/progress` 命令） |
 
 ## Quickstart

@@ -1,5 +1,5 @@
 /**
- * SidebarShell — the core sidebar component (widget mode).
+ * SidebarShell — the core widget component.
  *
  * Implements Component. Manages a list of registered panels and renders
  * them as a vertical stack above the editor. This is a read-only display
@@ -15,7 +15,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { SidebarPanel } from "./types";
 
 /** Maximum total lines to render, to prevent viewport overflow. */
-const MAX_LINES = 12;
+const MAX_LINES = 20;
 
 export class SidebarShell implements Component {
   private panels: SidebarPanel[] = [];
@@ -63,19 +63,19 @@ export class SidebarShell implements Component {
       const panel = this.panels[pi]!;
       const items = panel.getItems();
 
+      // Skip empty panels entirely
+      if (items.length === 0) continue;
+
       // Panel header
-      if (!pushLine(th.fg("muted", th.bold(`${panel.title} (${items.length})`)))) break;
+      const summary = panel.getSummary?.() ?? String(items.length);
+      if (!pushLine(th.fg("muted", th.bold(`${panel.title} (${summary})`)))) break;
 
       // Panel items
-      if (items.length === 0) {
-        if (!pushLine(`  ${th.fg("dim", "暂无内容")}`)) break;
-      } else {
-        for (const item of items) {
-          const maxLabelW = width - 5; // indent + icon + space
-          const truncatedLabel = truncateToWidth(item.label, Math.max(1, maxLabelW), "...", true);
-          const color = item.icon === "✏️" ? "text" : "dim";
-          if (!pushLine(`  ${item.icon} ${th.fg(color, truncatedLabel)}`)) break;
-        }
+      for (const item of items) {
+        const maxLabelW = width - 5; // indent + icon + space
+        const truncatedLabel = truncateToWidth(item.label, Math.max(1, maxLabelW), "...", true);
+        const color = item.icon === "✏️" ? "text" : "dim";
+        if (!pushLine(`  ${item.icon} ${th.fg(color, truncatedLabel)}`)) break;
       }
 
       // Blank line between panels (not after the last)

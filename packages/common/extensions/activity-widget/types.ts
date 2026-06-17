@@ -1,5 +1,5 @@
 /**
- * Activity Sidebar — Panel type definitions.
+ * Activity Widget — Panel type definitions.
  *
  * Panels are data sources, not components. The SidebarShell owns all
  * rendering and input handling. Each panel provides items and optional
@@ -18,7 +18,7 @@ export interface PanelItem {
   action?: () => void;
 }
 
-/** A panel that provides data for the sidebar to render. */
+/** A panel that provides data for the widget to render. */
 export interface SidebarPanel {
   /** Unique panel identifier */
   id: string;
@@ -26,6 +26,9 @@ export interface SidebarPanel {
   title: string;
   /** Return current items for this panel */
   getItems(): PanelItem[];
+  /** Optional summary shown in the panel header, e.g. "2/5" or "$1.23".
+   *  If provided, renders as: `title (summary)` instead of `title (itemCount)` */
+  getSummary?(): string;
   /** Called when the user selects an item and presses Enter (optional) */
   onAction?(item: PanelItem): void;
 }
