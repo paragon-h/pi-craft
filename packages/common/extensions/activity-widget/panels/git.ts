@@ -52,8 +52,12 @@ export class GitPanel implements SidebarPanel {
   getItems(): PanelItem[] {
     const s = this.state;
 
-    if (s.error && !s.branch) {
+    if (!s.branch && s.error) {
       return [{ id: "git-error", icon: "🌿", label: `不在 git 仓库中` }];
+    }
+
+    if (!s.branch && !s.error) {
+      return [{ id: "git-loading", icon: "🌿", label: `加载中...` }];
     }
 
     const items: PanelItem[] = [];

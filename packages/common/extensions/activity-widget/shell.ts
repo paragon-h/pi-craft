@@ -15,7 +15,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { SidebarPanel } from "./types";
 
 /** Maximum total lines to render, to prevent viewport overflow. */
-const MAX_LINES = 12;
+const MAX_LINES = 20;
 
 export class SidebarShell implements Component {
   private panels: SidebarPanel[] = [];
