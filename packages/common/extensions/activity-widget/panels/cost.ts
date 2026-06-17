@@ -14,10 +14,18 @@ export class CostPanel implements SidebarPanel {
   title = "成本";
 
   private cost: SessionCost | null = null;
+  private projectCost = 0;
+  private sessionCount = 0;
 
-  /** Update cost data (called by the extension on turn_end). */
+  /** Update session cost data (called by the extension on turn_end). */
   update(cost: SessionCost): void {
     this.cost = cost;
+  }
+
+  /** Update project-wide cost data. */
+  updateProject(totalCost: number, sessionCount: number): void {
+    this.projectCost = totalCost;
+    this.sessionCount = sessionCount;
   }
 
   getItems(): PanelItem[] {
@@ -32,7 +40,7 @@ export class CostPanel implements SidebarPanel {
     }
 
     const c = this.cost;
-    return [
+    const items = [
       {
         id: "cost-total",
         icon: "💰",
@@ -59,6 +67,17 @@ export class CostPanel implements SidebarPanel {
         label: `Cache W: ${formatTokens(c.totalCacheWrite)} tokens`,
       },
     ];
+
+    // Project total (if available)
+    if (this.projectCost > 0) {
+      items.push({
+        id: "cost-project",
+        icon: "📊",
+        label: `项目累计: ${formatCost(this.projectCost)} (${this.sessionCount} sessions)`,
+      });
+    }
+
+    return items;
   }
 
   getSummary(): string {

@@ -3,6 +3,7 @@
  *
  * Sources data from shared/session.ts's scanFileChanges().
  * Each file becomes a PanelItem with a write/read icon and path.
+ * Paths are displayed relative to cwd.
  */
 
 import type { FileChange } from "../../../shared/types";
@@ -13,6 +14,12 @@ export class FilesPanel implements SidebarPanel {
   title = "文件变更";
 
   private fileChanges: FileChange[] = [];
+  private cwd = "";
+
+  /** Set the working directory for relative path display. */
+  setCwd(cwd: string): void {
+    this.cwd = cwd;
+  }
 
   /** Update the file list (called by the extension on tool events). */
   update(fileChanges: FileChange[]): void {
@@ -34,7 +41,7 @@ export class FilesPanel implements SidebarPanel {
     return this.fileChanges.map((f, i) => ({
       id: `file-${i}`,
       icon: f.type === "write" ? "✏️" : "📖",
-      label: f.path,
+      label: this.displayPath(f.path),
       action: undefined, // Phase 4: will open diff view
     }));
   }
@@ -48,5 +55,13 @@ export class FilesPanel implements SidebarPanel {
 
   onAction?(_item: PanelItem): void {
     // Phase 4: will open diff view for the selected file
+  }
+
+  private displayPath(absPath: string): string {
+    if (!this.cwd) return absPath;
+    if (absPath.startsWith(this.cwd + "/")) {
+      return absPath.slice(this.cwd.length + 1);
+    }
+    return absPath;
   }
 }

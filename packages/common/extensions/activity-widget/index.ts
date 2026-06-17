@@ -15,6 +15,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { computeSessionCost, reconstructTodoState, scanFileChanges } from "../../shared/session";
+import { findProjectSessionDir, scanProjectCost } from "../../shared/project";
 import { SidebarShell } from "./shell";
 import { FilesPanel } from "./panels/files";
 import { TasksPanel } from "./panels/tasks";
@@ -32,6 +33,7 @@ export default function (pi: ExtensionAPI) {
     const entries = ctx.sessionManager.getBranch();
 
     // Files
+    filesPanel.setCwd(ctx.cwd);
     filesPanel.update(scanFileChanges(entries));
 
     // Tasks
@@ -45,6 +47,16 @@ export default function (pi: ExtensionAPI) {
     gitPanel.refresh(ctx.cwd).then(() => { if (shell) shell.refresh(); });
 
     shell?.refresh();
+
+    // Project cost (async — fire and forget)
+    const sessionDir = ctx.sessionManager.getSessionDir();
+    findProjectSessionDir(ctx.cwd, sessionDir).then((projectDir) => {
+      if (!projectDir) return;
+      scanProjectCost(projectDir).then(({ grandTotal, reports }) => {
+        costPanel.updateProject(grandTotal.cost, reports.length);
+        if (shell) shell.refresh();
+      });
+    });
   }
 
   function createWidget(ctx: ExtensionContext): void {

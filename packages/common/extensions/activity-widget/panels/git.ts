@@ -63,12 +63,44 @@ export class GitPanel implements SidebarPanel {
     const items: PanelItem[] = [];
 
     // Branch name
-    items.push({ id: "git-branch", icon: "🌿", label: s.branch ?? "detached" });
+    items.push({ id: "git-branch", icon: "🌿", label: s.branch! });
 
-    // Status lines
-    for (let i = 0; i < s.statusLines.length; i++) {
-      items.push({ id: `git-status-${i}`, icon: "  ", label: s.statusLines[i]! });
+    // Classify status lines
+    const modified: string[] = [];
+    const added: string[] = [];
+    const deleted: string[] = [];
+    const untracked: string[] = [];
+
+    for (const line of s.statusLines) {
+      // git status --porcelain format: XY path
+      const xy = line.slice(0, 2);
+      const file = line.slice(3);
+
+      if (xy.includes("?")) {
+        untracked.push(file);
+      } else if (xy.includes("A")) {
+        added.push(file);
+      } else if (xy.includes("D")) {
+        deleted.push(file);
+      } else if (xy.includes("M")) {
+        modified.push(file);
+      } else {
+        // Other changes (renamed, etc.)
+        modified.push(file);
+      }
     }
+
+    // Grouped, compact file lists (up to 3 per group)
+    const compactFiles = (files: string[]): string => {
+      return files.length <= 3
+        ? files.join(", ")
+        : files.slice(0, 3).join(", ") + ` ... +${files.length - 3}`;
+    };
+
+    if (modified.length) items.push({ id: "git-modified", icon: "  ", label: `${modified.length} 修改: ${compactFiles(modified)}` });
+    if (added.length) items.push({ id: "git-added", icon: "  ", label: `${added.length} 新增: ${compactFiles(added)}` });
+    if (deleted.length) items.push({ id: "git-deleted", icon: "  ", label: `${deleted.length} 删除: ${compactFiles(deleted)}` });
+    if (untracked.length) items.push({ id: "git-untracked", icon: "  ", label: `${untracked.length} 未跟踪: ${compactFiles(untracked)}` });
 
     if (s.statusLines.length === 0) {
       items.push({ id: "git-clean", icon: "  ", label: "working tree clean" });
