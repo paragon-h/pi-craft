@@ -8,7 +8,7 @@
  * - Data sourced on-demand from session entries (no double-write, no state management)
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { SessionCost, SessionCostReport } from "../../shared/types";
 import { formatCost, formatTokens } from "../../shared/format";
@@ -20,12 +20,12 @@ import { findProjectSessionDir, scanProjectCost } from "../../shared/project";
 class CostPanelComponent {
   private cost: SessionCost;
   private sessionName: string;
-  private theme: any;
+  private theme: Theme;
   private onClose: () => void;
   private cachedWidth?: number;
   private cachedLines?: string[];
 
-  constructor(cost: SessionCost, sessionName: string, theme: any, onClose: () => void) {
+  constructor(cost: SessionCost, sessionName: string, theme: Theme, onClose: () => void) {
     this.cost = cost;
     this.sessionName = sessionName;
     this.theme = theme;
@@ -143,7 +143,7 @@ class CostPanelComponent {
 class CostReportComponent {
   private reports: SessionCostReport[];
   private grandTotal: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number };
-  private theme: any;
+  private theme: Theme;
   private onClose: () => void;
   private cachedWidth?: number;
   private cachedLines?: string[];
@@ -151,7 +151,7 @@ class CostReportComponent {
   constructor(
     reports: SessionCostReport[],
     grandTotal: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number },
-    theme: any,
+    theme: Theme,
     onClose: () => void,
   ) {
     this.reports = reports;

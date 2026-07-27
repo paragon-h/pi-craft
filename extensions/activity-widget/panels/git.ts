@@ -1,22 +1,15 @@
 /**
  * Git Panel — shows git branch and working tree status.
  *
- * Fetches git data asynchronously (node:child_process exec) and caches
+ * Fetches git data asynchronously via shared/git scanGit() and caches
  * results for synchronous getItems(). Polls on tool_execution_start
  * (file operations may change git state).
  */
 
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import type { PanelItem, SidebarPanel } from "../types";
+import { scanGit, type GitScanResult } from "../../../shared/git";
 
-const execAsync = promisify(exec);
-
-interface GitState {
-  branch: string | null;
-  statusLines: string[];
-  error: string | null;
-}
+type GitState = GitScanResult;
 
 export class GitPanel implements SidebarPanel {
   id = "git";
@@ -26,27 +19,7 @@ export class GitPanel implements SidebarPanel {
 
   /** Trigger async fetch of git status for the given cwd. */
   async refresh(cwd: string): Promise<void> {
-    try {
-      const { stdout: branch } = await execAsync(
-        "git branch --show-current",
-        { cwd, encoding: "utf-8", timeout: 3000 },
-      );
-      const { stdout: status } = await execAsync(
-        "git status --porcelain",
-        { cwd, encoding: "utf-8", timeout: 3000 },
-      );
-      this.state = {
-        branch: branch.trim() || null,
-        statusLines: status.trim().split("\n").filter(Boolean),
-        error: null,
-      };
-    } catch (e: any) {
-      this.state = {
-        branch: null,
-        statusLines: [],
-        error: e?.message ?? "git not available",
-      };
-    }
+    this.state = await scanGit(cwd);
   }
 
   getItems(): PanelItem[] {

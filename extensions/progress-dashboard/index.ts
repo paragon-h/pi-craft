@@ -8,14 +8,13 @@
  * - 🌿 Git 状态（实时 git status）
  */
 
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { FileChange, Task } from "../../shared/types";
 import { formatCost, formatTokens } from "../../shared/format";
 import { computeSessionCost, reconstructTodoState, scanFileChanges } from "../../shared/session";
 import { findProjectSessionDir, scanProjectCost } from "../../shared/project";
+import { scanGit } from "../../shared/git";
 
 interface DashboardData {
   tasks: Task[];
@@ -43,35 +42,14 @@ function scanSession(entries: ReturnType<ExtensionContext["sessionManager"]["get
   };
 }
 
-const execAsync = promisify(exec);
-
-async function scanGit(cwd: string): Promise<{ gitBranch: string | null; gitStatus: string | null; gitError: string | null }> {
-  try {
-    const { stdout: branch } = await execAsync("git branch --show-current", { cwd, encoding: "utf-8", timeout: 3000 });
-    const { stdout: status } = await execAsync("git status --porcelain", { cwd, encoding: "utf-8", timeout: 3000 });
-    return {
-      gitBranch: branch.trim() || null,
-      gitStatus: status.trim() || null,
-      gitError: null,
-    };
-  } catch (e: any) {
-    return {
-      gitBranch: null,
-      gitStatus: null,
-      gitError: e?.message ?? "unknown error",
-    };
-  }
-}
-
-
 class ProgressDashboardComponent {
   private data: DashboardData;
-  private theme: any;
+  private theme: Theme;
   private onClose: () => void;
   private cachedWidth?: number;
   private cachedLines?: string[];
 
-  constructor(data: DashboardData, theme: any, onClose: () => void) {
+  constructor(data: DashboardData, theme: Theme, onClose: () => void) {
     this.data = data;
     this.theme = theme;
     this.onClose = onClose;
@@ -215,9 +193,9 @@ export default function (pi: ExtensionAPI) {
         ...session,
         projectCost,
         sessionCount,
-        gitBranch: git.gitBranch,
-        gitStatus: git.gitStatus,
-        gitError: git.gitError,
+        gitBranch: git.branch,
+        gitStatus: git.statusLines.join("\n") || null,
+        gitError: git.error,
       };
 
       if (ctx.mode !== "tui") {

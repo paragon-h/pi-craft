@@ -11,7 +11,9 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -26,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }
