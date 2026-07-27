@@ -15,10 +15,8 @@
     "types": ["node"]
   },
   "include": [
-    "packages/common/shared/**/*.ts",
-    "packages/common/extensions/**/*.ts",
-    "packages/coding/extensions/**/*.ts",
-    "packages/knowledge-base/extensions/**/*.ts"
+    "shared/**/*.ts",
+    "extensions/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }
